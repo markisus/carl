@@ -17,12 +17,13 @@ inline void* next_ptr(size_t size, void* p) {
 }
 
 template <typename TId>
-inline void rebuild_index(
+inline size_t rebuild_index(
     const std::vector<TId>& referred_ids,
     const std::vector<TId>& referring_ids,
-    std::vector<size_t>& index) {
+    std::vector<size_t>& index,
+    size_t referring_start = 0) {
     size_t referred_idx = 0;
-    for (size_t i = 0; i < referring_ids.size(); ++i) {
+    for (size_t i = referring_start; i < referring_ids.size(); ++i) {
         const auto id = referring_ids[i];
         bool match_found = false;
         for (; referred_idx < referred_ids.size(); ++referred_idx) {
@@ -32,11 +33,11 @@ inline void rebuild_index(
             }
         }
         if (!match_found) {
-            std::cout << "Could not find id\n";
-            exit(-1);
+            return i;
         }
         index[i] = referred_idx;
     }
+    return referring_ids.size();
 }
 
 inline void write_identity_permutation(std::vector<size_t>& perm) {

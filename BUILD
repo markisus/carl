@@ -47,6 +47,8 @@ cc_binary(
           "factor_graph.cpp",
           "factor_array.cpp",
           "factor_array.h",
+          "factor_arrays.h",
+          "factor_arrays.cpp",
           "variable_array.cpp",
           "variable_array.h",
           "matrix_mem.h",

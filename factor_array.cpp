@@ -12,6 +12,11 @@ constexpr static int COV_MAT = 5;
 constexpr static int COV_VEC = 6;
 
 template <uint8_t dim>
+FactorId FactorArray<dim>::create_factor(const MatrixRef& info_mat, const VectorRef& info_vec) {
+    return create_factor(static_dim<dim>(info_mat), static_dim<dim>(info_vec));
+}
+
+template <uint8_t dim>
 FactorId FactorArray<dim>::create_factor(const StaticMatrixRef<dim>& info_mat, const StaticVectorRef<dim>& info_vec) {
     FactorId id = NEW_FACTOR_ID(dim);
     factors.insert(id,
@@ -35,6 +40,16 @@ MatrixRef FactorArray<dim>::get_cov_mat(size_t idx) {
 template <uint8_t dim>
 VectorRef FactorArray<dim>::get_cov_vec(size_t idx) {
     return get_refs(factors.template get_column<COV_VEC>())[idx];
+}
+
+template <uint8_t dim>
+MatrixRef FactorArray<dim>::get_info_mat(size_t idx) const {
+    return get_refs(factors.template get_column<INFO_MAT>())[idx];
+}
+
+template <uint8_t dim>
+VectorRef FactorArray<dim>::get_info_vec(size_t idx) const {
+    return get_refs(factors.template get_column<INFO_VEC>())[idx];
 }
 
 template <uint8_t dim>
@@ -76,8 +91,14 @@ void FactorArray<dim>::rebuild_cov_mats() {
     }
 }
 
+template <uint8_t dim>
+const std::vector<FactorId>& FactorArray<dim>::ids() const {
+    return factors.template get_column<FACTOR_ID>();
+};
+
 template class FactorArray<4>;
 template class FactorArray<6>;
+template class FactorArray<12>;
 template class FactorArray<16>;
 
 

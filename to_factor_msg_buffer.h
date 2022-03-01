@@ -24,11 +24,15 @@ struct ToFactorMsg_SendContext {
     VectorRefs vectors;
 };
 
+class FactorArrays;
+
 class ToFactorMsgBufferBase {
 public:
     virtual uint8_t get_dimension() const = 0;
-    virtual void commit_edges(const std::vector<FactorId>& external_factor_ids) = 0;
-    virtual void add_edge(Id variable_id, FactorId factor_id, uint8_t factor_slot) = 0;
+    virtual void commit_edges(
+        const std::vector<VariableId>& external_variable_ids,
+        const FactorArrays& factor_arrays) = 0;
+    virtual void add_edge(VariableId variable_id, FactorId factor_id, uint8_t factor_slot) = 0;
 
     virtual ToFactorMsg_RetrievalContext generate_retrieval_context() const = 0;
     virtual void rebuild_retrieval_buffer() = 0;
@@ -39,15 +43,17 @@ public:
 template <uint8_t dim>
 struct ToFactorMsgBuffer : ToFactorMsgBufferBase {
 
-    vapid::soa<Id, FactorId, uint8_t, size_t, size_t, MatrixMem<dim>, VectorMem<dim>,  bool> msgs;
-    vapid::soa<Id, FactorId, uint8_t, size_t, size_t, MatrixMem<dim>, VectorMem<dim>> retrieval_buffer;
+    vapid::soa<VariableId, FactorId, uint8_t, size_t, size_t, size_t, MatrixMem<dim>, VectorMem<dim>,  bool> msgs;
+    vapid::soa<VariableId, FactorId, uint8_t, size_t, size_t, size_t, MatrixMem<dim>, VectorMem<dim>> retrieval_buffer;
 
     bool edges_committed = false;
 
     uint8_t get_dimension() const override;
 
-    void commit_edges(const std::vector<FactorId>& external_factor_ids) override;
-    void add_edge(Id variable_id, FactorId factor_id, uint8_t factor_slot) override;
+    void commit_edges(
+        const std::vector<VariableId>& external_variable_ids,
+        const FactorArrays& factor_arrays) override;
+    void add_edge(VariableId variable_id, FactorId factor_id, uint8_t factor_slot) override;
 
     ToFactorMsg_RetrievalContext generate_retrieval_context() const override;
     void rebuild_retrieval_buffer() override;

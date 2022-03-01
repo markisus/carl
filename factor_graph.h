@@ -2,20 +2,33 @@
 
 #include "msg_buffers.h"
 #include "variable_array.h"
-#include "factor_array.h"
+#include "factor_arrays.h"
+#include <array>
 
 namespace carl {
 
 class FactorGraph {
 public:
     void update();
-    Id add_camera_matrix(const Eigen::Matrix<double, 4, 1>& mean,
-                         const double fx_fy_stddev,
-                         const double cx_cy_stddev);
+
+    // template <uint8_t dim>
+    // VariableId create_variable(const StaticVectorRef<dim>& mean,
+    //                            const StaticMatrixRef<dim>& cov);
+    // template <uint8_t dim>
+    // FactorId create_factor(const StaticVectorRef<dim>& info_vec,
+    //                        const StaticMatrixRef<dim>& info_mat);
+
+    void add_edge(VariableId variable_id, FactorId factor_id, uint8_t slot);
+
+    std::pair<VectorRef, MatrixRef> get_mean_cov(VariableId variable_id);
+
+    void commit();
 
     MsgBuffersBase& msg_buffers_of_dimension(uint8_t dim);
     VariableArrayBase& vars_of_dimension(uint8_t dim);
-    FactorArrayBase& factors_of_dimension(uint8_t dim);
+    FactorArrays factors;
+
+    static constexpr std::array<uint8_t, 2> variable_dims = {4, 6};
     
 private:
     MsgBuffers<4> msg4s;
@@ -24,16 +37,10 @@ private:
     VariableArray<4> var4s;
     VariableArray<6> var6s;
 
-    FactorArray<4> factor4s;
-    FactorArray<6> factor6s;
-    FactorArray<16> factor16s;
-
     void execute(const ToVariableMsg_SendContext& ctx);
     void execute(const ToVariableMsg_RetrievalContext& ctx);
     void execute(const ToFactorMsg_RetrievalContext& ctx);
     void execute(const ToFactorMsg_SendContext& ctx);
-
-
 };
 
 }

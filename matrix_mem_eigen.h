@@ -24,6 +24,16 @@ Eigen::Map<Eigen::Matrix<double, dim, 1>> to_eigen_map(const StaticVectorRef<dim
 }
 
 template <uint8_t dim>
+Eigen::Map<Eigen::Matrix<double, dim, dim>> to_eigen_map(const MatrixMem<dim>& mem) {
+    return Eigen::Map<Eigen::Matrix<double, dim, dim>> { non_const(mem.data()) };
+}
+
+template <uint8_t dim>
+Eigen::Map<Eigen::Matrix<double, dim, 1>> to_eigen_map(const VectorMem<dim>& mem) {
+    return Eigen::Map<Eigen::Matrix<double, dim, 1>> { non_const(mem.data()) };
+}
+
+template <uint8_t dim>
 struct StaticEigenMatrixRefs {
     StaticEigenMatrixRefs(const StaticMatrixRefs<dim>& r) : refs_(r) {}
     Eigen::Map<Eigen::Matrix<double, dim, dim>> operator[](size_t idx) {
@@ -73,6 +83,16 @@ struct EigenVectorRefs {
 
 inline EigenVectorRefs to_eigen_map(const VectorRefs& r) {
     return {r};
+}
+
+template <int dim, typename = std::enable_if_t<(dim > 0)>>
+inline StaticMatrixRef<uint8_t(dim)> ref(const Eigen::Matrix<double, dim, dim>& m) {
+    return { non_const(m.data()) };
+}
+
+template <int dim, typename = std::enable_if_t<(dim > 0)>>
+inline StaticVectorRef<uint8_t(dim)> ref(const Eigen::Matrix<double, dim, 1>& m) {
+    return { non_const(m.data()) };
 }
 
 }  // carl

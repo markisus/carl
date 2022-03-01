@@ -7,21 +7,37 @@
 
 namespace carl {
 
-template <uint8_t dim>
-struct MatrixMem : std::array<double, dim*dim> {
-    uint8_t dimension() { return dim; }
-};
-
-template <uint8_t dim>
-struct VectorMem : std::array<double, dim> {
-    uint8_t dimension() { return dim; }
-};
-
 struct MatrixRef {
     MatrixRef(uint8_t d, double* b) : dimension(d), begin(b) {}
     
     uint8_t dimension;
     double* begin;
+};
+
+struct VectorRef {
+    VectorRef(uint8_t d, double* b) : dimension(d), begin(b) {}
+
+    uint8_t dimension;
+    double* begin;
+};
+
+
+template <uint8_t dim>
+struct MatrixMem : std::array<double, dim*dim> {
+    uint8_t dimension() { return dim; }
+
+    MatrixRef ref() {
+        return MatrixRef { dim, this->data() };
+    }
+};
+
+template <uint8_t dim>
+struct VectorMem : std::array<double, dim> {
+    uint8_t dimension() { return dim; }
+
+    VectorRef ref() {
+        return VectorRef { dim, this->data() };
+    }    
 };
 
 template <uint8_t dim>
@@ -34,15 +50,8 @@ struct StaticMatrixRef : public MatrixRef {
 
     MatrixMem<dim>& operator*() {
         const auto* const_this = this;
-        const_cast<MatrixMem<dim>&>(const_this->operator*());
+        return const_cast<MatrixMem<dim>&>(const_this->operator*());
     }    
-};
-
-struct VectorRef {
-    VectorRef(uint8_t d, double* b) : dimension(d), begin(b) {}
-
-    uint8_t dimension;
-    double* begin;
 };
 
 template <uint8_t dim>
@@ -55,7 +64,7 @@ struct StaticVectorRef : public VectorRef {
 
     VectorMem<dim>& operator*() {
         const auto* const_this = this;
-        const_cast<VectorMem<dim>&>(const_this->operator*());
+        return const_cast<VectorMem<dim>&>(const_this->operator*());
     }
 };
 
