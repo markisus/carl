@@ -80,13 +80,13 @@ template <uint8_t dim>
 void ToFactorMsgBuffer<dim>::commit_retrievals()  {
     for (size_t i = 0; i < retrieval_buffer.size(); ++i) {
         auto [src_mat, src_vec, buffer_idx] = retrieval_buffer.template view<INFO_MAT, INFO_VEC, INTERNAL_IDX>(i);
-        auto dst_mat = msgs.template get_column<INFO_MAT>()[buffer_idx];
+        auto& dst_mat = msgs.template get_column<INFO_MAT>()[buffer_idx];
         dst_mat = src_mat;
     }
 
     for (size_t i = 0; i < retrieval_buffer.size(); ++i) {
         auto [src_mat, src_vec, buffer_idx] = retrieval_buffer.template view<INFO_MAT, INFO_VEC, INTERNAL_IDX>(i);
-        auto dst_vec = msgs.template get_column<INFO_VEC>()[buffer_idx];
+        auto& dst_vec = msgs.template get_column<INFO_VEC>()[buffer_idx];
         dst_vec = src_vec;
     }
 

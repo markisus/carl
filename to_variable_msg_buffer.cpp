@@ -76,7 +76,7 @@ void ToVariableMsgBuffer<dim>::commit_edges(
             info_vecs[i] = *static_dim<dim>(factors.get_info_vec(external_factor_idxs[i]));
         }
     }
-    
+
     edges_committed = true;
 }
 

@@ -34,20 +34,12 @@ VariableArrayBase& FactorGraph::vars_of_dimension(uint8_t dim) {
 }
 
 void FactorGraph::execute(const ToVariableMsg_SendContext& ctx) {
-    std::cout << ">>>>>>>>>>>>>>>>>>>>>>>>>>>\n";
-    std::cout << "sending msgs to vars of dim " << int(ctx.variable_dim) << "\n";
-    
     auto& vars = vars_of_dimension(ctx.variable_dim);
     vars.zero_all();
-
-    
-    std::cout << "SANITY CHECK VARS DIM 6 IDX 0" << "\n";
-    std::cout << to_eigen_map(vars_of_dimension(6).get_mat(0)) << "\n";
 
     // update vectors
     for (size_t i = 0; i < ctx.num_msgs; ++i) {
         auto src_vec = to_eigen_map(ctx.vectors[i]);
-        std::cout << "\t" << i << " to " << ctx.variable_idxs[i] << " adding info vec " << src_vec.transpose() << "\n";
         auto dst_vec = to_eigen_map(vars.get_vec(ctx.variable_idxs[i]));
         dst_vec += src_vec;
     }
@@ -55,15 +47,9 @@ void FactorGraph::execute(const ToVariableMsg_SendContext& ctx) {
     // update matrices
     for (size_t i = 0; i < ctx.num_msgs; ++i) {
         auto src_mat = to_eigen_map(ctx.matrices[i]);
-        std::cout << "\tadding info mat\n " << src_mat << "\n";
         auto dst_mat = to_eigen_map(vars.get_mat(ctx.variable_idxs[i]));
         dst_mat += src_mat;
     }
-
-    std::cout << "SANITY CHECK VARS DIM 6 IDX 0" << "\n";
-    std::cout << to_eigen_map(vars_of_dimension(6).get_mat(0)) << "\n";
-    std::cout << "<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n";
-
 };
 
 template <uint8_t var_dim>
@@ -77,27 +63,21 @@ void execute_impl(const ToVariableMsg_RetrievalContext& ctx,
     // retrieve vecs
     for (size_t i = 0; i < ctx.num_msgs; ++i) {
         const auto [factor_dim, _ignore] = ctx.factor_ids[i];
-        std::cout << "\tretrieving msg from factor of dim " << int(factor_dim) << "\n";
-        
         const size_t factor_idx = ctx.factor_idxs[i];
         auto dst_vec = to_eigen_map(vectors[i]);
         auto src_vec = to_eigen_map(graph.factors.of_dimension(factor_dim).get_cov_vec(factor_idx));
 
         dst_vec = src_vec.segment<var_dim>(ctx.factor_slots[i]);
-        std::cout << "\tmsg was " << dst_vec.transpose() << "\n";
     }
 
     // retrieve mats
     for (size_t i = 0; i < ctx.num_msgs; ++i) {
         const auto [factor_dim, _ignore] = ctx.factor_ids[i];
-        std::cout << "\tretrieving msg from factor of dim " << int(factor_dim) << "\n";
-
         const size_t factor_idx = ctx.factor_idxs[i];
         auto dst_mat = to_eigen_map(matrices[i]);
         auto src_mat = to_eigen_map(graph.factors.of_dimension(factor_dim).get_cov_mat(factor_idx));
-        dst_mat = src_mat.block<var_dim, var_dim>(ctx.factor_slots[i], ctx.factor_slots[i]);
 
-        std::cout << "\tmsg was\n" << dst_mat.transpose() << "\n";
+        dst_mat = src_mat.block<var_dim, var_dim>(ctx.factor_slots[i], ctx.factor_slots[i]);
     }
 
     // info-covariance transform
@@ -110,7 +90,8 @@ void execute_impl(const ToVariableMsg_RetrievalContext& ctx,
 
         dst_mat = result_mat;
         dst_vec = result_vec;
-    };        
+    };
+
 }
 
 void FactorGraph::execute(const ToVariableMsg_RetrievalContext& ctx) {
@@ -124,29 +105,15 @@ void FactorGraph::execute(const ToVariableMsg_RetrievalContext& ctx) {
 }
 
 void FactorGraph::execute(const ToFactorMsg_RetrievalContext& ctx) {
-    std::cout << "Retreiving to_factor msgs of dim " << int(ctx.variable_dim) << "\n";
-
     auto& vars = vars_of_dimension(ctx.variable_dim);
-    if (ctx.variable_dim == 6) {
-        std::cout << "SANITY CHECK VARS DIM 6 IDX 0" << "\n";
-        std::cout << to_eigen_map(vars_of_dimension(6).get_mat(0)) << "\n";
-    }
 
     // retrieve mats
     for (size_t i = 0; i < ctx.num_msgs; ++i) {
-        std::cout << "\tmsg mat " << i << "\n";
-
         const size_t var_idx = ctx.variable_idxs[i];
         auto var_mat = to_eigen_map(vars.get_mat(var_idx));
         auto msg_mat = to_eigen_map(ctx.matrices[i]);
-
-        std::cout << "\tvar at " << var_idx << " with dim " << int(ctx.variable_dim) << " mat\n" << var_mat << "\n";
-        std::cout << "\tbefore\n" << msg_mat << "\n";
-
         msg_mat *= -1;
         msg_mat += var_mat;
-
-        std::cout << "\tafter\n" << msg_mat << "\n";        
     }
 
     // retrieve vecs
@@ -178,7 +145,26 @@ void FactorGraph::execute(const ToFactorMsg_SendContext& ctx) {
     }
 }
 
+void FactorGraph::initial_update() {
+    // install priors, do not try to retrieve from factors since they are not ready yet
+    for (uint8_t msg_dim : variable_dims) {
+        auto& to_var_msgs = msg_buffers_of_dimension(msg_dim).to_variable_msgs();
+        execute(to_var_msgs.generate_send_context());
+    }
+
+    // now variables are non-degenerate (if they came with priors)
+}
+
 void FactorGraph::update() {
+    // send messages to factors
+    for (uint8_t msg_dim : variable_dims) {
+        auto& to_factor_msgs = msg_buffers_of_dimension(msg_dim).to_factor_msgs();
+        to_factor_msgs.rebuild_retrieval_buffer();
+        execute(to_factor_msgs.generate_retrieval_context());
+        to_factor_msgs.commit_retrievals();
+        execute(to_factor_msgs.generate_send_context());
+    }
+
     for (uint8_t factor_dim : FactorArrays::factor_dims) {
         factors.of_dimension(factor_dim).rebuild_cov_mats();
     }
@@ -190,15 +176,6 @@ void FactorGraph::update() {
         execute(to_var_msgs.generate_retrieval_context());
         to_var_msgs.commit_retrievals();
         execute(to_var_msgs.generate_send_context());
-    }
-
-    // send messages to factors
-    for (uint8_t msg_dim : variable_dims) {
-        auto& to_factor_msgs = msg_buffers_of_dimension(msg_dim).to_factor_msgs();
-        to_factor_msgs.rebuild_retrieval_buffer();
-        execute(to_factor_msgs.generate_retrieval_context());
-        to_factor_msgs.commit_retrievals();
-        execute(to_factor_msgs.generate_send_context());
     }
 
     for (uint8_t var_dim : variable_dims) {

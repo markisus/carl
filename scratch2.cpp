@@ -92,11 +92,14 @@ int main(int argc, char *argv[])
     add_prior(graph, var2, var2_mean, var2_cov);
 
     // connect these two with a factor
-    Eigen::Matrix<double, 1, 12> J;
-    J <<
-         1,  1,  1,  1,  1,  1,
-        -1, -1, -1, -1, -1, -1;
+    Eigen::Matrix<double, 6, 12> J;
+    J.block<6,6>(0,0).setIdentity();
+    J.block<6,6>(0,6).setIdentity();
+    J.block<6,6>(0,6) *= -1;
+    
     Eigen::Matrix<double, 12, 12> info_mat = J.transpose() * J;
+    info_mat *= 1000;
+    
     Eigen::Matrix<double, 12, 1> info_vec;
     info_vec.setZero();
 
@@ -106,26 +109,16 @@ int main(int argc, char *argv[])
     graph.add_edge(var2, binary_factor, 6);
     
     graph.commit();
+    graph.initial_update();
 
+    for (size_t i = 0; i < 100; ++i)
     {
         graph.update();
-        auto [mean, cov] = graph.get_mean_cov(var1);
-        std::cout << "mean\n " << to_eigen_map(static_dim<4>(mean)).transpose() << "\n";
+        auto [mean1, cov1] = graph.get_mean_cov(var1);
+        auto [mean2, cov2] = graph.get_mean_cov(var2);
+        std::cout << "mean1\n " << to_eigen_map(static_dim<6>(mean1)).transpose() << "\n";
+        std::cout << "mean2\n " << to_eigen_map(static_dim<6>(mean2)).transpose() << "\n";
     }
-
-    {
-        graph.update();
-        auto [mean, cov] = graph.get_mean_cov(var1);
-        std::cout << "mean\n " << to_eigen_map(static_dim<4>(mean)).transpose() << "\n";
-    }
-
-    // {
-    //     graph.update();
-    //     auto [mean, cov] = graph.get_mean_cov(var1);
-    //     std::cout << "mean\n " << to_eigen_map(static_dim<4>(mean)).transpose() << "\n";
-    // }
-
-    std::cout << "Updated graph" << "\n";
 
     return 0;
 }

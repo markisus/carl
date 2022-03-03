@@ -23,6 +23,7 @@ public:
     std::pair<VectorRef, MatrixRef> get_mean_cov(VariableId variable_id);
 
     void commit();
+    void initial_update();
 
     MsgBuffersBase& msg_buffers_of_dimension(uint8_t dim);
     VariableArrayBase& vars_of_dimension(uint8_t dim);
