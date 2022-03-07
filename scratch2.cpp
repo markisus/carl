@@ -98,6 +98,9 @@ int main(int argc, char *argv[])
     J.block<6,6>(0,6) *= -1;
     
     Eigen::Matrix<double, 12, 12> info_mat = J.transpose() * J;
+    std::cout << "info mat\n" << info_mat << "\n";
+
+    
     info_mat *= 1000;
     
     Eigen::Matrix<double, 12, 1> info_vec;

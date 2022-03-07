@@ -16,6 +16,19 @@ http_archive(
     sha256 = "a8641c84ebacd02f4f238f5ab03f40fde92365ecccc85f629c15fa44b194c9db",
     strip_prefix = "vapid-soa-{}".format(vapid_soa_version))
 
+
+http_archive(
+    name = "com_github_skypjack_entt",
+    url = "https://github.com/skypjack/entt/archive/3328c7e78bcf638a78d7a601d3780a10e7dd712c.zip",
+    sha256 = "b182fb2625d0da580f27b86bfe07fed0e92154f213b48223d225587e63dd5ea8",
+    strip_prefix = "entt-3328c7e78bcf638a78d7a601d3780a10e7dd712c")
+
+gtest_version = "c9461a9b55ba954df0489bab6420eb297bed846b"
+http_archive(
+    name = "com_github_google_googletest",
+    url = "https://github.com/google/googletest/archive/{}.zip".format(gtest_version),
+    strip_prefix = "googletest-{}".format(gtest_version))
+
 # rules for eigen
 # adapated from https://ceres-solver.googlesource.com/ceres-solver/+/master/WORKSPACE
 http_archive(

@@ -1,5 +1,15 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
+cc_binary(
+    name="math_test",
+    srcs=["math_test.cpp",
+          "math.hpp"],
+    deps=[
+        "@com_gitlab_libeigen_eigen//:eigen",
+        "@com_github_google_googletest//:gtest_main"]
+)
+    
+
 cc_library(
     name="factor_graph",
     srcs=["id.cpp",
@@ -61,6 +71,18 @@ cc_binary(
         "@com_gitlab_libeigen_eigen//:eigen",
     ]
 )
+
+cc_binary(
+    name="scratch3",
+    srcs=[
+        "scratch3.cpp",
+        "math.hpp",
+    ],
+    deps=[
+
+        "@com_github_skypjack_entt//:entt",
+        "@com_gitlab_libeigen_eigen//:eigen",
+    ])    
     
 
 py_binary(
