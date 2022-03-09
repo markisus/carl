@@ -29,18 +29,24 @@ http_archive(
     url = "https://github.com/google/googletest/archive/{}.zip".format(gtest_version),
     strip_prefix = "googletest-{}".format(gtest_version))
 
+http_archive(
+    name = "com_github_google_benchmark",
+    url = "https://github.com/google/benchmark/archive/refs/tags/v1.6.1.zip",
+    strip_prefix = "benchmark-1.6.1")
+
 # rules for eigen
 # adapated from https://ceres-solver.googlesource.com/ceres-solver/+/master/WORKSPACE
 http_archive(
         name = "com_gitlab_libeigen_eigen",
         strip_prefix = "eigen-3.4",
         url = "https://gitlab.com/libeigen/eigen/-/archive/3.4/eigen-3.4.zip",
+        sha256 = "e55ce8d04938171ab11e8189d7d085c5c215736e9d84839658b6b350d11383fd",
         build_file_content = """
 cc_library(
     name = 'eigen',
     srcs = [],
     includes = ['.'],
-    hdrs = glob(['Eigen/**']),
+    hdrs = glob(['Eigen/**', 'unsupported/**']),
     visibility = ['//visibility:public'],
 )
 """

@@ -1,5 +1,23 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
+cc_library(
+    name="geometry",
+    srcs=["geometry.cpp"],
+    hdrs=["geometry.h"],
+    deps=[
+        "@com_gitlab_libeigen_eigen//:eigen",
+    ])
+
+cc_binary(
+    name="geometry_test",
+    srcs=["geometry_test.cpp"],
+    deps=[
+        ":geometry",
+        "@com_gitlab_libeigen_eigen//:eigen",
+        "@com_github_google_googletest//:gtest_main"]
+)
+          
+
 cc_binary(
     name="math_test",
     srcs=["math_test.cpp",
@@ -77,6 +95,7 @@ cc_binary(
     srcs=[
         "scratch3.cpp",
         "math.hpp",
+        "factor_graph.hpp",
     ],
     deps=[
 
@@ -84,6 +103,19 @@ cc_binary(
         "@com_gitlab_libeigen_eigen//:eigen",
     ])    
     
+cc_binary(
+    name="math_benchmark",
+    srcs=[
+        "math_benchmark.cpp",
+        "math.hpp"
+    ],
+    deps=[
+        "@com_github_google_benchmark//:benchmark_main",
+        "@com_gitlab_libeigen_eigen//:eigen",
+    ],
+)    
+    
+
 
 py_binary(
     name="transpiler",

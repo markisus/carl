@@ -1,4 +1,8 @@
+#pragma once
 #include "Eigen/Dense"
+#include <iostream>
+
+namespace carl {
 
 // NOTATION =======================================================================================
 // In what follows, the matrices and vectors are assumed to follow some conformable block structure.
@@ -99,6 +103,8 @@ Eigen::Matrix<double, dim, dim> info_marginalization_fixer(
     return fixer_mat;
 }
 
+// benchmark shows naive version is faster
+// so this needs to be optimized before using it
 template <int dim>
 void low_rank_update(
     const Eigen::Map<Eigen::MatrixXd>& info_mat_perturb,
@@ -157,20 +163,49 @@ void low_rank_update(
     // Therefore, we can know the updated mean by only using the previous marginal covariance Σ and mean μ,
     // updated marginal covariance Σ' and perturbation v.
 
-    // static buffer to hold (V⁻¹ + Σᵢ)⁻¹
-    Eigen::Matrix<double, dim, dim> buff;
-    Eigen::Map<Eigen::MatrixXd> kmat = {buff.data(), info_mat_perturb.rows(), info_mat_perturb.cols()};
-    kmat = (info_mat_perturb.inverse() + covariance.block(slot, slot, info_mat_perturb.rows(), info_mat_perturb.cols())).inverse();
-
     auto sigma_xi = covariance.block(0, slot, dim, info_mat_perturb.cols());
+
+    // double buff1[dim*dim];
+    // Eigen::Map<Eigen::MatrixXd> kmat = {buff1, info_mat_perturb.rows(), info_mat_perturb.cols()};
+
+    double buff2[dim*dim];
+    Eigen::Map<Eigen::MatrixXd> lmat = {buff2, dim, info_mat_perturb.cols()};
+    lmat.noalias() = sigma_xi * (info_mat_perturb.inverse() + covariance.block(slot, slot, info_mat_perturb.rows(), info_mat_perturb.cols())).inverse();
+
     auto mu_xi = mean.segment(slot, info_vec_perturb.size());
 
-    const Eigen::Matrix<double, dim, 1> mean_update_a = -sigma_xi * kmat * mu_xi;
+    const Eigen::Matrix<double, dim, 1> mean_update_a = -lmat * mu_xi;
     mean += mean_update_a;
 
-    const Eigen::Matrix<double, dim, dim> cov_update = -sigma_xi * kmat * sigma_xi.transpose();
+    const Eigen::Matrix<double, dim, dim> cov_update = -lmat * sigma_xi.transpose();
     covariance += cov_update;
 
     // sigma_xi has now been mutated via underlying reference to covariance
     mean += sigma_xi * info_vec_perturb;
+}
+
+// // info getter
+// // exp( || x - mu ||^2_sigma ) * exp( || f(x) - z ||^2_sigma
+// // unpacking a correlation matrix
+// template <int dim_state, int dim_meas>
+// void stats_to_factor_info(
+//     const Eigen::Matrix<double, dim_state + dim_meas, dim_state + dim_meas>& joint_covariance,
+//     const Eigen::Matrix<double, dim_state + dim_meas, 1>& joint_mean,
+//     const Eigen::Matrix<double, dim_meas, 1>& measurement,
+//     Eigen::Matrix<double, dim_state, dim_state>* factor_info_mat,
+//     Eigen::Matrix<double, dim_state, 1>* factor_info_vec) {
+
+//     Eigen::Matrix<double, dim_state + dim_meas, dim_state + dim_meas> info_mat = covariance.inverse();
+//     Eigen::Matrix<double, dim_state + dim_meas, dim_state + dim_meas> info_vec = covariance.ldlt().solve(mean);
+
+//     // measurement
+//     *factor_info_mat = info_mat.block<dim_state, dim_state>(0,0);
+//     *factor_info_vec = -info_mat.block<dim_state, dim_meas>(0, dim_state) * measurement;
+// }
+
+// // get joint covariance
+// // input samples
+// // output samples
+// // 
+
 }
