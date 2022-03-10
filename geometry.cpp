@@ -1,4 +1,5 @@
 #include "geometry.h"
+#include "eigen_util.h"
 #include <iostream>
 
 namespace carl {
@@ -78,7 +79,7 @@ Eigen::Matrix<double, 3, 3> SO3_left_jacobian_inv(const Eigen::Matrix<double, 3,
         const double sn = std::sin(theta);
         coeff1 = (1.0/theta2) - (1 + cs)/(2*theta*sn);
     }
-    Eigen::Matrix<double, 3, 3> result = id<3>() - theta_mat*0.5 + coeff1*theta_mat*theta_mat;
+    Eigen::Matrix<double, 3, 3> result = Eigen::id<3>() - theta_mat*0.5 + coeff1*theta_mat*theta_mat;
     return result;
 }
 
@@ -100,7 +101,7 @@ Eigen::Matrix<double, 3, 3> SO3_left_jacobian(const Eigen::Matrix<double, 3, 1>&
         coeff1 = (1.0 - cs)/theta2;
         coeff2 = (theta - sn)/theta3;
     }
-    Eigen::Matrix<double, 3, 3> result = id<3>() + coeff1*theta_mat + coeff2*theta_mat*theta_mat;
+    Eigen::Matrix<double, 3, 3> result = Eigen::id<3>() + coeff1*theta_mat + coeff2*theta_mat*theta_mat;
     return result;
 }
 
@@ -183,7 +184,7 @@ Eigen::Matrix<double, 4, 4> exp_screw(const ScrewData& screw_data,
     Eigen::Matrix<double, 4, 4> result;
     result.row(3) << 0, 0, 0, 1;
     result.block<3, 3>(0, 0) =
-        id<3>() +
+        Eigen::id<3>() +
         s * screw_data.omega +
         (1 - c) * screw_data.omega_squared;
     result.block<3, 1>(0, 3) =
@@ -242,7 +243,7 @@ Eigen::Matrix<double, 4, 1> apply_transform(
     return world_xyzw;
 }
 
-Eigen::Matrix<double, 2, 1> camera_project(
+Eigen::Matrix<double, 2, 1> apply_camera_matrix(
     const Eigen::Matrix<double, 4, 1>& fxfycxcy,
     const Eigen::Matrix<double, 4, 1>& xyzw,
     Eigen::Matrix<double, 2, 4>* optional_dxy_dcamparams,
@@ -280,53 +281,123 @@ Eigen::Matrix<double, 2, 1> camera_project(
     return result;
 }
 
-void camera_object_factor(
-    const Eigen::Matrix<double, 4, 1>& fxfycxcy,
-    const Eigen::Matrix<double, 6, 1>& se3_world_camera,
-    const Eigen::Matrix<double, 6, 1>& se3_world_object) {
+Eigen::VectorD<2> camera_project(
+    const Eigen::VectorD<4>& fxfycxcy,
+    const Eigen::SquareD<4>& tx_camera_world,
+    const Eigen::VectorD<6>& se3_world_camera,
+    const Eigen::SquareD<4>& tx_world_object,
+    const Eigen::VectorD<6>& se3_world_object,
+    const Eigen::VectorD<4>& object_point,
+    Eigen::MatrixD<2, 4>* dxy_dcamparams_ptr,
+    Eigen::MatrixD<2, 6>* dxy_dcamera_ptr,
+    Eigen::MatrixD<2, 6>* dxy_dobject_ptr) {
+    // Consider this perturbation.
+    // ẟ → tx_camera_world * exp(ẟ) * tx_world_object * model
+    // 
+    // We can view it as acting on the tx_world_object. Alternatively,
+    // we can view it as the negative of a perturbation acting on the
+    // tx_world_camera.
+    // 
+    // ẟ' → (exp(ẟ') * tx_world_camera)⁻¹ * tx_world_object * model
+    //    = tx_camera_world * exp(-ẟ') * tx_world_object * model
+    //
+    // In hindsight it's obvious that applying a perturbation on
+    // the body (e.g. moving it forward in the world by 1 mm), will have
+    // the exact opposite effect as applying the same perturbation on the
+    // camera when viewing the camera frame coordinates of the object.
+
+    Eigen::MatrixD<4, 6> dcampoint_dobject;
+    Eigen::MatrixD<4, 1> world_point = tx_world_object * object_point;
+    Eigen::MatrixD<4, 1> camera_point = apply_transform(tx_camera_world, world_point, &dcampoint_dobject);
+
+    Eigen::MatrixD<2, 4> dxy_dcampoint;
+    Eigen::VectorD<2> projected_image_point = apply_camera_matrix(fxfycxcy, camera_point, dxy_dcamparams_ptr, &dxy_dcampoint);
+
+    Eigen::MatrixD<2, 6> dxy_dobject = dxy_dcampoint * dcampoint_dobject;
+    Eigen::MatrixD<2, 6> dxy_dcamera = -dxy_dobject;
+
+    // exp(Jl_logM [Δ]) * M ~= exp(logM + [Δ])
+    // need to premultiply dxy_dobject by Jl_logdobject_dworld
+    // need to premultiply dxy_camera by Jl_logcamera_dworld
+        
+    Eigen::MatrixD<2, 6> dxy_dobject_global = dxy_dobject * SE3_left_jacobian(se3_world_object);
+    Eigen::MatrixD<2, 6> dxy_dcamera_global = dxy_dcamera * SE3_left_jacobian(se3_world_camera);
+
+    if (dxy_dcamera_ptr) {
+        *dxy_dcamera_ptr = dxy_dcamera_global;
+    }
+
+    if (dxy_dobject_ptr) {
+        *dxy_dobject_ptr = dxy_dobject_global;
+    }
+
+    return projected_image_point;
+}
+
+double camera_project_factor(
+    const Eigen::VectorD<4>& fxfycxcy,
+    const Eigen::VectorD<6>& se3_world_camera,
+    const Eigen::VectorD<6>& se3_world_object,
+    const std::vector<Eigen::VectorD<4>>& object_points,
+    const std::vector<Eigen::VectorD<2>>& image_points,
+    Eigen::SquareD<16>* JtJ_ptr,
+    Eigen::VectorD<16>* Jtr_ptr) {
+
+    assert(object_points.size() == image_points.size());
+    assert(!object_points.empty());
 
     auto se3_camera_world = (-se3_world_camera).eval();
-
     auto tx_camera_world = se3_exp(se3_camera_world);
     auto tx_world_object = se3_exp(se3_world_object);
 
-    auto tx_camera_object = (tx_camera_world * tx_world_object).eval();
+    // r := z - f(x0)
+    // || J dx + f(x0) - z ||^2
+    // || J dx - r ||^2
+    // dx.t J.t J dx - 2 r.t J dx + r.t r
 
-    for (int i = 0; i < 8; ++i) {
-        // Consider this perturbation.
-        // ẟ → tx_camera_world * exp(ẟ) * tx_world_object * model
-        // 
-        // We can view it as acting on the tx_world_object. Alternatively,
-        // we can view it as the negative of a perturbation acting on the
-        // tx_world_camera.
-        // 
-        // ẟ' → (exp(ẟ') * tx_world_camera)⁻¹ * tx_world_object * model
-        //    = tx_camera_world * exp(-ẟ') * tx_world_object * model
-        //
-        // In hindsight it's obvious that applying a perturbation on
-        // the body (e.g. moving it forward in the world by 1 mm), will have
-        // the exact opposite effect as applying the same perturbation on the
-        // camera when viewing the camera frame coordinates of the object.
-
-        Eigen::Matrix<double, 4, 6> dcampoint_dobject;
-        Eigen::Matrix<double, 4, 1> world_point = tx_world_object * model.point(i);
-        Eigen::Matrix<double, 4, 1> camera_point = apply_transform(tx_camera_world, world_point, &dcampoint_dobject);
-
-        Eigen::Matrix<double, 2, 4> dxy_dcamparams;
-        Eigen::Matrix<double, 2, 4> dxy_dcampoint;
-        camera_project(fxfycxcy, camera_point, &dxy_dcamparams, &dxy_dcampoint);
-
-        Eigen::Matrix<double, 2, 6> dxy_dobject = dxy_dcampoint * dcampoint_dobject;
-        Eigen::Matrix<double, 2, 6> dxy_dcamera = -dxy_dobject;
-
-        // exp(Jl_logM [Δ]) * M ~= exp(logM + [Δ])
-        // need to premultiply dxy_dobject by Jl_logdobject_dworld
-        // need to premultiply dxy_camera by Jl_logcamera_dworld
-        
-        Eigen::Matrix<double, 2, 6> dxy_dobject_global = dxy_dobject * SE3_left_jacobian(se3_world_object);
-        Eigen::Matrix<double, 2, 6> dxy_dcamera_global = dxy_dobject * SE3_left_jacobian(se3_world_camera);
-        
+    if (JtJ_ptr) {
+        JtJ_ptr->setZero();
     }
+    if (Jtr_ptr) {
+        Jtr_ptr->setZero();
+    }
+
+    double error2 = 0;
+
+    for (size_t i = 0; i < object_points.size(); ++i) {
+        Eigen::MatrixD<2, 4> dxy_dcamparams;
+        Eigen::MatrixD<2, 6> dxy_dcamera;
+        Eigen::MatrixD<2, 6> dxy_dobject;
+
+        Eigen::VectorD<2> projected_img_point = camera_project(
+            fxfycxcy,
+            tx_camera_world,
+            se3_world_camera,
+            tx_world_object,
+            se3_world_object,
+            object_points[i],
+            &dxy_dcamparams,
+            &dxy_dcamera,
+            &dxy_dobject);
+
+        auto residual = image_points[i] - projected_img_point;
+
+        error2 += residual.squaredNorm();
+
+        Eigen::MatrixD<2, 16> J;
+        J.block<2, 4>(0, 0) = dxy_dcamparams;
+        J.block<2, 6>(0, 4) = dxy_dcamera;
+        J.block<2, 6>(0, 10) = dxy_dobject;
+
+        if (JtJ_ptr) {
+            (*JtJ_ptr) += J.transpose() * J;
+        }
+        if (Jtr_ptr) {
+            (*Jtr_ptr) += J.transpose() * residual;
+        }
+    }
+
+    return error2;
 }
 
 }  // carl

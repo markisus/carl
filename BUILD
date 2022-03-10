@@ -1,10 +1,18 @@
 load("@rules_python//python:defs.bzl", "py_binary")
 
 cc_library(
+    name="eigen_util",
+    hdrs=["eigen_util.h"],
+    deps=[
+        "@com_gitlab_libeigen_eigen//:eigen",
+    ])
+
+cc_library(
     name="geometry",
     srcs=["geometry.cpp"],
     hdrs=["geometry.h"],
     deps=[
+        ":eigen_util",
         "@com_gitlab_libeigen_eigen//:eigen",
     ])
 
@@ -13,6 +21,7 @@ cc_binary(
     srcs=["geometry_test.cpp"],
     deps=[
         ":geometry",
+        ":eigen_util",
         "@com_gitlab_libeigen_eigen//:eigen",
         "@com_github_google_googletest//:gtest_main"]
 )
