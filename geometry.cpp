@@ -335,6 +335,25 @@ Eigen::VectorD<2> camera_project(
 }
 
 double camera_project_factor(
+    const Eigen::VectorD<16>& input,
+    const std::vector<Eigen::VectorD<4>>& object_points,
+    const std::vector<Eigen::VectorD<2>>& image_points,
+    Eigen::SquareD<16>* JtJ_ptr,
+    Eigen::VectorD<16>* Jtr_ptr) {
+
+    // todo : make the other impl call down to this one
+    Eigen::VectorD<4> camparams = input.head<4>();
+    Eigen::VectorD<6> se3_world_camera = input.segment<6>(4);
+    Eigen::VectorD<6> se3_world_object = input.tail<6>();
+    return camera_project_factor(camparams,
+                                 se3_world_camera,
+                                 se3_world_object,
+                                 object_points,
+                                 image_points,
+                                 JtJ_ptr, Jtr_ptr);
+}
+
+double camera_project_factor(
     const Eigen::VectorD<4>& fxfycxcy,
     const Eigen::VectorD<6>& se3_world_camera,
     const Eigen::VectorD<6>& se3_world_object,

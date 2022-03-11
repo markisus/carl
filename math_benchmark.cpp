@@ -1,4 +1,4 @@
-#include "math.hpp"
+#include "gaussian_math.hpp"
 #include "benchmark/benchmark.h"
 #include <memory>
 

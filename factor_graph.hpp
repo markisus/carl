@@ -1,10 +1,10 @@
 #pragma once
 #include <iostream>
 #include <cstdint>
-#include <unordered_set>
 #include "Eigen/Dense"
 #include "entt/entity/registry.hpp"
-#include "math.hpp"
+#include "gaussian_math.hpp"
+#include "eigen_util.h"
 
 inline Eigen::Map<Eigen::VectorXd> eigen_vector_map(void* data, uint8_t dim) {
     return Eigen::Map<Eigen::VectorXd> {(double*)data, dim, 1};
@@ -71,7 +71,10 @@ using ToFactorVector = TaggedMatrix<dim, 1, MatrixTag::TO_FACTOR_MESSAGE_VEC>;
 template <int dim>
 using LinearizationPoint = TaggedMatrix<dim, 1, MatrixTag::LINEARIZATION_POINT>;
 
-// empty struct to tag edges going to nonlinear factors
+// empty struct to tag edges going
+// from variables of dimension var_dim
+// to nonlinear factors
+template <int var_dim>
 struct NonlinearTag {};
 
 struct FactorTypes {
@@ -136,18 +139,29 @@ struct VariableConnection {
 };
 
 template <typename F, typename D>
-struct FactorGraph {};
+struct FactorGraph;
 
 template <int dim>
 struct VariableHandle {
     entt::entity entity;
 };
 
+template <int dim>
+struct FactorHandle {
+    entt::entity entity;
+    operator entt::entity() const { return entity; }
+};
+
+template <uint8_t... DIMS>
+using Dims = std::integer_sequence<uint8_t, DIMS...>;
+
 template <uint8_t... F_DIMS, uint8_t... V_DIMS>
-struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_sequence<uint8_t, V_DIMS...>> {
+struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
     entt::registry factors;
     entt::registry variables;
     entt::registry edges;
+
+    double regularizer = 1e3;
 
     template <int dim>
     constexpr static bool variable_dimension_supported() {
@@ -172,8 +186,9 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
         variables.emplace<Mean<dim>>(variable_id, prior_mean);
         variables.emplace<Covariance<dim>>(variable_id, prior_covariance);
 
-        const InfoMatrix<dim> info_matrix = prior_covariance.inverse();
-        const InfoVector<dim> info_vector = prior_covariance.ldlt().solve(prior_mean);
+        auto llt = prior_covariance.llt();
+        const InfoMatrix<dim> info_matrix = llt.solve(Eigen::id<dim>());
+        const InfoVector<dim> info_vector = llt.solve(prior_mean);
         variables.emplace<InfoMatrix<dim>>(variable_id, info_matrix);
         variables.emplace<InfoVector<dim>>(variable_id, info_vector);
     
@@ -194,6 +209,7 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
         const uint8_t factor_dimension = factor_info.dimension;
         const uint8_t variable_dimension = variables.get<VariableInfo>(variable).dimension;
         assert((variable_dimension == dim));
+        assert((factor_slot < factor_dimension));
 
         const auto edge_id = edges.create();
 
@@ -206,14 +222,14 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
         edges.emplace<ToFactorVector<dim>>(edge_id, ToFactorVector<dim>::Zero());
 
         if (factor_info.nonlinear) {
-            edges.emplace<NonlinearTag>(edge_id);
+            edges.emplace<NonlinearTag<dim>>(edge_id);
         }
 
         return edge_id;
     }
 
     template <int dim>
-    entt::entity add_factor(uint8_t type, bool nonlinear) {
+    FactorHandle<dim> add_factor(uint8_t type, bool nonlinear) {
         static_assert(factor_dimension_supported<dim>());
 
         const auto factor_id = factors.create();
@@ -231,13 +247,12 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
             factors.emplace<LinearizationPoint<dim>>(factor_id);
         }
 
-        return factor_id;
+        return FactorHandle<dim>{factor_id};
     }
 
     template <int dim>
     entt::entity add_factor(
-        uint8_t type,
-        bool nonlinear,
+        uint8_t type, bool nonlinear,
         const Eigen::Matrix<double, dim, 1>& info_vector,
         const Eigen::Matrix<double, dim, dim>& info_matrix) {
         const auto factor_id = add_factor<dim>(type, nonlinear);
@@ -295,18 +310,23 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
         for (auto [_, factor_info_matrix, factor_info_matrix_delta, covariance] :
                  factors.template view<InfoMatrix<dim>, InfoMatrixDelta<dim>, Covariance<dim>>().each()) {
             covariance = factor_info_matrix + factor_info_matrix_delta;
+            // std::cout << "info mat\n" << covariance << "\n";
+
         }
 
         for (auto [_, info_vector, info_vector_delta, mean] :
                  factors.template view<InfoVector<dim>, InfoVectorDelta<dim>, Mean<dim>>().each()) {
             mean = info_vector + info_vector_delta;
+            // std::cout << "info vec\n" << mean.transpose() << "\n";
         }
 
         for (auto [_, mean, covariance] : factors.template view<Mean<dim>, Covariance<dim>>().each()) {
-            Mean<dim> m = covariance.ldlt().solve(mean);
-            Covariance<dim> c = covariance.inverse();
+            auto llt = covariance.llt();
+            Mean<dim> m = llt.solve(mean);
+            Covariance<dim> c = llt.solve(Eigen::id<dim>());
             mean = m;
             covariance = c;
+            // std::cout << "joint mean " << mean.transpose() << "\n";
         }
     }
 
@@ -328,6 +348,7 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
             void* mean_data = factors.storage(factor_types.mean)->second.get(factor_connection.factor);
             auto mean = eigen_vector_map(mean_data, factor_dimension);
             to_variable_vector = mean.segment<dim>(factor_connection.factor_slot);
+            // std::cout << "pre-fixup to-variable "<< entt::to_entity(_) <<" mean " << to_variable_vector.transpose() << "\n";
         }
 
         // fixup the messages by removing the self-contribution (to_factor_matrix and to_factor_vector)
@@ -338,13 +359,15 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
             const Eigen::Matrix<double, dim, dim> fixer = info_marginalization_fixer(to_variable_matrix, info_mat_perturb);
             to_variable_matrix = perturb_marginalization<dim>(fixer, to_variable_matrix);
             to_variable_vector = perturb_marginalization<dim>(fixer, to_variable_matrix, info_vec_perturb, to_variable_vector);
+            // std::cout << "post-fixup to-variable " << entt::to_entity(_) <<" mean " << to_variable_vector.transpose() << "\n";
         }
 
         // convert the message from covariance to info form
         for (auto [_, to_variable_matrix, to_variable_vector] :
                  edges.template view<ToVariableMatrix<dim>, ToVariableVector<dim>>().each()) {
-            ToVariableVector<dim> info_vector = to_variable_matrix.ldlt().solve(to_variable_vector);
-            ToVariableMatrix<dim> info_matrix = to_variable_matrix.inverse();
+            auto llt = to_variable_matrix.llt();
+            ToVariableVector<dim> info_vector = llt.solve(to_variable_vector);
+            ToVariableMatrix<dim> info_matrix = llt.solve(Eigen::id<dim>());
             to_variable_matrix = info_matrix;
             to_variable_vector = info_vector;
         }
@@ -364,7 +387,6 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
                  edges.template view<VariableConnection, ToVariableVector<dim>>().each()) {
             variables.template get<InfoVectorDelta<dim>>(connection.variable) += to_variable_vector;
         }
-    
 
         // load the priors
         for (auto [_, info_matrix, info_matrix_prior] :
@@ -378,12 +400,14 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
         }
     
         // add in the deltas 
-               for (auto [_, info_matrix, info_matrix_delta] :
-                        variables.template view<InfoMatrix<dim>, InfoMatrixDelta<dim>>().each()) {
-                   info_matrix += info_matrix_delta;
-               }
+        for (auto [_, info_matrix, info_matrix_delta] :
+                 variables.template view<InfoMatrix<dim>, InfoMatrixDelta<dim>>().each()) {
+            // std::cout << entt::to_entity(_) << " info matrix delta\n" << info_matrix_delta << "\n";
+            info_matrix += info_matrix_delta;
+        }
         for (auto [_, info_vector, info_vector_delta] :
                  variables.template view<InfoVector<dim>, InfoVectorDelta<dim>>().each()) {
+            // std::cout << entt::to_entity(_) << " info vector delta " << info_vector_delta.transpose() << "\n";                 
             info_vector += info_vector_delta;
         }
 
@@ -392,12 +416,15 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
             covariance = info_matrix;
         }
         for (auto [_, mean, info_vector] : variables.template view<Mean<dim>, InfoVector<dim>>().each()) {
+            // std::cout << entt::to_entity(_) << " prev mean " << mean.transpose() << "\n";                 
             mean = info_vector;
         }
         for (auto [_, mean, covariance] : variables.template view<Mean<dim>, Covariance<dim>>().each()) {
-            const Mean<dim> m = covariance.ldlt().solve(mean);
+            auto llt = covariance.llt();
+            const Mean<dim> m = llt.solve(mean);
             mean = m;
-            const Covariance<dim> c = covariance.inverse();
+            // std::cout << entt::to_entity(_) << " updated mean " << mean.transpose() << "\n";                 
+            const Covariance<dim> c = llt.solve(Eigen::id<dim>());
             covariance = c;
         }
     }
@@ -413,24 +440,75 @@ struct FactorGraph<std::integer_sequence<uint8_t, F_DIMS...>, std::integer_seque
 
     template <int dim>
     Eigen::Matrix<double, dim, 1> get_mean(VariableHandle<dim> variable) {
-        return variables.get<Mean<2>>(variable.entity);
+        return variables.get<Mean<dim>>(variable.entity);
     }
 
+    template <int variable_dim>
+    void begin_linearization_impl() {
+        // Fetch the linearization points of each nonlinear factor.
+        // There is a choice here to gather the linearization point from the variable registry
+        // or from the to-factor message. The latter choice should be accurate since it subtracts
+        // out the information that this factor sent out to the variable. But this
+        // requires an info-form to covariance-form conversion. The former choice just uses
+        // the fully marginalized estimates of the variable means. That's what we do for now.
+
+        for (auto [_, factor_connection, variable_connection] :
+                 edges.template view<FactorConnection, VariableConnection, NonlinearTag<variable_dim>>().each()) {
+            const uint8_t factor_dimension = factor_connection.factor_dimension;
+            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            void* linearization_point_data = factors.storage(factor_types.linearization_point)->second.get(factor_connection.factor);
+            auto linearization_point = eigen_vector_map(linearization_point_data, factor_dimension);
+            const auto& variable_mean = variables.template get<Mean<variable_dim>>(variable_connection.variable);
+            // std::cout << "writing " << variable_mean.transpose() << " to " << int(factor_connection.factor_slot) << "\n";
+            linearization_point.segment<variable_dim>(factor_connection.factor_slot) = variable_mean;
+        }
+    }
+
+    template <int factor_dim>
+    void end_linearization_impl() {
+        // Assuming linearization about input x0, the factor info vectors
+        // rtJ are Δ-based, where Δ = x - x0, arising from the following
+        // cost function.
+        // || JΔ - r ||² = Δ.t J.tJ Δ - 2 r.t J Δ + r.t r
+        //
+        // This is equivalent to the following.
+        // || J(x - x0) - r ||² = (x - x0).t J.tJ (x- x0) - 2 r.t J (x - x0) + r.t r
+        // || J(x - x0) - r ||² = x.t J.tJ x - 2 x0.t J.t J x - 2 r.t J x + constant
+        // || J(x - x0) - r ||² = x.t J.tJ x - 2 (x0.t J.t J + r.t J) x + constant
+        //
+        // So the information vector component gets modified by += x0.t J.t J, and
+        // J.t J is the information matrix component.
+
+        for (auto [_, linearization_point, info_vector, info_matrix] :
+                 factors.template view<LinearizationPoint<factor_dim>, InfoVector<factor_dim>, InfoMatrix<factor_dim>>().each()) {
+            info_vector += info_matrix * linearization_point;
+        }
+    }
+
+    void begin_linearization() {
+        ((begin_linearization_impl<V_DIMS>()), ...);
+    }
+
+    void end_linearization() {
+        ((end_linearization_impl<F_DIMS>()), ...);
+    }
+
+    template <int dim>
+    Eigen::Matrix<double, dim, 1> get_linearization_point(FactorHandle<dim> factor) {
+        return factors.get<LinearizationPoint<dim>>(factor.entity);
+    }
+
+    template <int dim>
+    Eigen::Matrix<double, dim, dim>* get_factor_info_matrix(FactorHandle<dim> factor) {
+        return &factors.get<InfoMatrix<dim>>(factor.entity);
+    }
+
+    template <int dim>
+    Eigen::Matrix<double, dim, 1>* get_factor_info_vector(FactorHandle<dim> factor) {
+        return &factors.get<InfoVector<dim>>(factor.entity);
+    }
+    
 };
-
-template <int variable_dim, typename FD, typename UD>
-void prepare_linearization_points(FactorGraph<FD, UD>& graph) {
-    for (auto [_, factor_connection, variable_connection] :
-             graph.edges.template view<FactorConnection, VariableConnection, NonlinearTag>().each()) {
-        const uint8_t factor_dimension = factor_connection.factor_dimension;
-        const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
-        void* linearization_point_data = graph.factors.storage(factor_types.linearization_point)->second.get(factor_connection.factor);
-        auto linearization_point = eigen_vector_map(linearization_point_data, factor_dimension);
-        const auto& variable_mean = graph.variables.template get<Mean<variable_dim>>(variable_connection.variable);
-        linearization_point.segment<variable_dim>(factor_connection.factor_slot) = variable_mean;
-    }
-}
-
 
 
 }

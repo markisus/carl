@@ -1,6 +1,8 @@
 #include <iostream>
 #include "gtest/gtest.h"
-#include "math.hpp"
+#include "gaussian_math.hpp"
+
+using namespace carl;
 
 TEST(info_marginalization_fixer, test1) {
     Eigen::Matrix<double, 4, 4> info_mat;
