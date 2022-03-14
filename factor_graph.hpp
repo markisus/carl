@@ -77,7 +77,11 @@ using LinearizationPoint = TaggedMatrix<dim, 1, MatrixTag::LINEARIZATION_POINT>;
 template <int var_dim>
 struct NonlinearTag {};
 
-struct FactorTypes {
+// empty struct to tag factors
+// template <int type, int dim, bool nonlinear>
+// struct FactorTag {};
+
+struct MatrixTypes {
     entt::id_type info_matrix;
     entt::id_type info_vector;
     entt::id_type info_matrix_delta;
@@ -89,7 +93,7 @@ struct FactorTypes {
 
 // basically a manually implemented vtable
 template <int dim>
-constexpr FactorTypes make_factor_types() {
+constexpr MatrixTypes make_matrix_types() {
     return {
         entt::type_hash<InfoMatrix<dim>>::value(),
         entt::type_hash<InfoVector<dim>>::value(),
@@ -101,25 +105,31 @@ constexpr FactorTypes make_factor_types() {
     };
 }
 
-constexpr std::array<FactorTypes, 21> FACTOR_TYPES {
-    make_factor_types<1>(), // zeroth entry is arbitrary
+constexpr std::array<MatrixTypes, 21> MATRIX_TYPES {
+    make_matrix_types<1>(), // zeroth entry is arbitrary
 
-    make_factor_types<1>(), make_factor_types<2>(),
-    make_factor_types<3>(), make_factor_types<4>(),
-    make_factor_types<5>(), make_factor_types<6>(),
-    make_factor_types<7>(), make_factor_types<8>(),
-    make_factor_types<9>(), make_factor_types<10>(),    
-    make_factor_types<11>(), make_factor_types<12>(),    
-    make_factor_types<13>(), make_factor_types<14>(),    
-    make_factor_types<15>(), make_factor_types<16>(),    
-    make_factor_types<17>(), make_factor_types<18>(),    
-    make_factor_types<19>(), make_factor_types<20>()
+    make_matrix_types<1>(), make_matrix_types<2>(),
+    make_matrix_types<3>(), make_matrix_types<4>(),
+    make_matrix_types<5>(), make_matrix_types<6>(),
+    make_matrix_types<7>(), make_matrix_types<8>(),
+    make_matrix_types<9>(), make_matrix_types<10>(),    
+    make_matrix_types<11>(), make_matrix_types<12>(),    
+    make_matrix_types<13>(), make_matrix_types<14>(),    
+    make_matrix_types<15>(), make_matrix_types<16>(),    
+    make_matrix_types<17>(), make_matrix_types<18>(),    
+    make_matrix_types<19>(), make_matrix_types<20>()
 };
 
 struct FactorInfo {
     uint8_t dimension;
-    uint8_t type;
+    entt::id_type type;
     bool nonlinear = false;
+};
+
+template <int DIM, bool NONLINEAR> 
+struct FactorData {
+    static constexpr int dimension = DIM;
+    static constexpr bool nonlinear = NONLINEAR;
 };
 
 struct VariableInfo {
@@ -161,7 +171,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
     entt::registry variables;
     entt::registry edges;
 
-    double regularizer = 1e3;
+    double regularizer = 1;
 
     template <int dim>
     constexpr static bool variable_dimension_supported() {
@@ -228,12 +238,19 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return edge_id;
     }
 
-    template <int dim>
-    FactorHandle<dim> add_factor(uint8_t type, bool nonlinear) {
-        static_assert(factor_dimension_supported<dim>());
+    template <typename TFactorData>
+    auto add_factor(TFactorData&& factor_data) {
+        static_assert(factor_dimension_supported<factor_data.dimension>());
+
+        constexpr int dim = factor_data.dimension;
+        constexpr bool nonlinear = factor_data.nonlinear;
 
         const auto factor_id = factors.create();
-        factors.emplace<FactorInfo>(factor_id, uint8_t(dim), type, nonlinear);
+
+        using TFactorDataDecayed = typename std::decay<TFactorData>::type;
+        factors.emplace<TFactorDataDecayed>(factor_id, std::forward<TFactorData>(factor_data));
+        factors.emplace<FactorInfo>(factor_id, uint8_t(dim), entt::type_hash<TFactorDataDecayed>::value(), nonlinear);
+
         factors.emplace<InfoVectorDelta<dim>>(factor_id, InfoVectorDelta<dim>::Zero());
         factors.emplace<InfoMatrixDelta<dim>>(factor_id, InfoMatrixDelta<dim>::Zero());
         factors.emplace<Mean<dim>>(factor_id, Mean<dim>::Zero());
@@ -250,12 +267,12 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return FactorHandle<dim>{factor_id};
     }
 
-    template <int dim>
-    entt::entity add_factor(
-        uint8_t type, bool nonlinear,
-        const Eigen::Matrix<double, dim, 1>& info_vector,
-        const Eigen::Matrix<double, dim, dim>& info_matrix) {
-        const auto factor_id = add_factor<dim>(type, nonlinear);
+    template <typename TFactorData, int dim>
+    auto add_factor(TFactorData&& factor_data,
+                    const Eigen::Matrix<double, dim, 1>& info_vector,
+                    const Eigen::Matrix<double, dim, dim>& info_matrix) {
+        static_assert(dim == factor_data.dimension);
+        const auto factor_id = add_factor(factor_data);
         factors.get<InfoVector<dim>>(factor_id) = info_vector;
         factors.get<InfoMatrix<dim>>(factor_id) = info_matrix;
         return factor_id;
@@ -281,7 +298,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [_, connection, to_factor_matrix, to_factor_vector] :
                  edges.template view<FactorConnection, ToFactorMatrix<variable_dim>, ToFactorVector<variable_dim>>().each()) {
             const uint8_t factor_dimension = connection.factor_dimension;
-            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            const MatrixTypes& factor_types = MATRIX_TYPES[factor_dimension];
             void* info_matrix_data = factors.storage(factor_types.info_matrix_delta)->second.get(connection.factor);
             auto info_matrix = eigen_matrix_map(info_matrix_data, factor_dimension);
             info_matrix.block<variable_dim, variable_dim>(connection.factor_slot, connection.factor_slot) = to_factor_matrix;
@@ -291,17 +308,11 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [_, connection, to_factor_matrix, to_factor_vector] :
                  edges.template view<FactorConnection, ToFactorMatrix<variable_dim>, ToFactorVector<variable_dim>>().each()) {
             const uint8_t factor_dimension = connection.factor_dimension;
-            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            const MatrixTypes& factor_types = MATRIX_TYPES[factor_dimension];
             void* info_vector_data = factors.storage(factor_types.info_vector_delta)->second.get(connection.factor);
             auto info_vector = eigen_vector_map(info_vector_data, factor_dimension);
             info_vector.segment<variable_dim>(connection.factor_slot) = to_factor_vector;
         }
-
-        // prepare relinearization
-        // std::cout << "prepping lin point for var dims " << int(variable_dim) << "\n";
-        // for linearization in factors
-        // [ pick up the variable state, write it into the linearization point ]
-        // to-factor-linearization?
     }
 
     template <int dim>
@@ -311,7 +322,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                  factors.template view<InfoMatrix<dim>, InfoMatrixDelta<dim>, Covariance<dim>>().each()) {
             covariance = factor_info_matrix + factor_info_matrix_delta;
             // std::cout << "info mat\n" << covariance << "\n";
-
         }
 
         for (auto [_, info_vector, info_vector_delta, mean] :
@@ -335,7 +345,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         // retreive matrix message from factor covariance
         for (auto [_, factor_connection, to_variable_matrix] : edges.template view<FactorConnection, ToVariableMatrix<dim>>().each()) {
             const uint8_t factor_dimension = factor_connection.factor_dimension;
-            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            const MatrixTypes& factor_types = MATRIX_TYPES[factor_dimension];
             void* covariance_data = factors.storage(factor_types.covariance)->second.get(factor_connection.factor);
             auto covariance = eigen_matrix_map(covariance_data, factor_dimension);
             to_variable_matrix = covariance.block<dim, dim>(factor_connection.factor_slot, factor_connection.factor_slot);
@@ -344,7 +354,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         // retrieve vector message from factor mean
         for (auto [_, factor_connection, to_variable_vector] : edges.template view<FactorConnection, ToVariableVector<dim>>().each()) {
             const uint8_t factor_dimension = factor_connection.factor_dimension;
-            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            const MatrixTypes& factor_types = MATRIX_TYPES[factor_dimension];
             void* mean_data = factors.storage(factor_types.mean)->second.get(factor_connection.factor);
             auto mean = eigen_vector_map(mean_data, factor_dimension);
             to_variable_vector = mean.segment<dim>(factor_connection.factor_slot);
@@ -443,6 +453,11 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return variables.get<Mean<dim>>(variable.entity);
     }
 
+    template <int dim>
+    Eigen::Matrix<double, dim, dim> get_covariance(VariableHandle<dim> variable) {
+        return variables.get<Covariance<dim>>(variable.entity);
+    }
+
     template <int variable_dim>
     void begin_linearization_impl() {
         // Fetch the linearization points of each nonlinear factor.
@@ -455,7 +470,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [_, factor_connection, variable_connection] :
                  edges.template view<FactorConnection, VariableConnection, NonlinearTag<variable_dim>>().each()) {
             const uint8_t factor_dimension = factor_connection.factor_dimension;
-            const FactorTypes& factor_types = FACTOR_TYPES[factor_dimension];
+            const MatrixTypes& factor_types = MATRIX_TYPES[factor_dimension];
             void* linearization_point_data = factors.storage(factor_types.linearization_point)->second.get(factor_connection.factor);
             auto linearization_point = eigen_vector_map(linearization_point_data, factor_dimension);
             const auto& variable_mean = variables.template get<Mean<variable_dim>>(variable_connection.variable);

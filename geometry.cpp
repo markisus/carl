@@ -18,6 +18,112 @@ struct ScrewData {
     Eigen::Vector3d omega_squared_v;
 };
 
+// x * cotan(x) for x
+// accurate only in region (-pi/2, pi/2) via taylor series
+// https://www.wolframalpha.com/input/?i=taylor+expand+x+cotan%28x%29+around+0
+double x_cotx(double x) {
+    constexpr double c2 = -1.0 / 3;
+    constexpr double c4 = -1.0 / 45;
+    constexpr double c6 = -2.0 / 945;
+    constexpr double c8 = -1.0 / 4725;
+    constexpr double c10 = -2.0 / 93555;
+    const double x2 = x * x;
+    const double x4 = x2 * x2;
+    const double x6 = x4 * x2;
+    const double x8 = x4 * x4;
+    const double x10 = x8 * x2;
+    return 1.0 + c2 * x2 + c4 * x4 + c6 * x6 + c8 * x8 + c10 * x10;
+}
+
+void SO3_log(const Eigen::Matrix3d& rotation_matrix,
+             double* theta,
+             Eigen::Matrix3d* omega_hat) {
+    // Check for edge case: identity
+    // A rotation matrix is identity iff all diagonal entries are 1.0
+    bool is_identity = true;
+    for (int i = 0; i < 3; ++i) {
+        if (!almostEquals(1.0f, rotation_matrix(i, i))) {
+            is_identity = false;
+            break;
+        }
+    }
+    if (is_identity) {
+        *theta = 0;
+        Eigen::Vector3d omega_vector;
+        omega_vector << 1, 0, 0;
+        (*omega_hat) = so3_vec_to_mat(omega_vector);
+        return;
+    }
+
+    // Check for edge case: rotation of k*PI
+    const double trace = rotation_matrix.trace();
+    if (almostEquals(-1.0f, trace)) {
+        *theta = M_PI;
+        Eigen::Vector3d omega_vector;
+        const double r33 = rotation_matrix(2, 2);
+        const double r22 = rotation_matrix(1, 1);
+        const double r11 = rotation_matrix(0, 0);
+        if (!almostEquals(1.0f + r33, 0.0f)) {
+            (omega_vector)(0) = rotation_matrix(0, 2);
+            (omega_vector)(1) = rotation_matrix(1, 2);
+            (omega_vector)(2) = 1 + rotation_matrix(2, 2);
+            (omega_vector) /= std::sqrt(2 * (1 + r33));
+        } else if (!almostEquals(1.0f + r22, 0.0f)) {
+            (omega_vector)(0) = rotation_matrix(0, 1);
+            (omega_vector)(1) = 1 + rotation_matrix(1, 1);
+            (omega_vector)(2) = rotation_matrix(2, 1);
+            (omega_vector) /= std::sqrt(2 * (1 + r22));
+        } else {
+            // 1 + r11 != 0
+            (omega_vector)(0) = 1 + rotation_matrix(0, 0);
+            (omega_vector)(1) = rotation_matrix(1, 0);
+            (omega_vector)(2) = rotation_matrix(2, 0);
+            (omega_vector) /= std::sqrt(2 * (1 + r11));
+        }
+        (*omega_hat) = so3_vec_to_mat(omega_vector);
+        return;
+    }
+
+    // Normal case
+
+    // htmo means Half of Trace Minus One
+    const double htmo = 0.5f * (trace - 1);
+    *theta = std::acos(htmo);  // todo: investigate faster approx to acos
+
+    const double sin_acos_htmo = std::sqrt(1.0 - htmo * htmo);
+    *omega_hat =
+        0.5f / sin_acos_htmo * (rotation_matrix - rotation_matrix.transpose());
+}
+
+// Returns a twist
+Eigen::VectorD<6> SE3_log(const Eigen::Matrix4d& SE3_element) {
+    // exp( (omega theta, v theta) ) = SE3_element
+    // omega theta = log(R)
+    // v theta = theta Ginv(theta) * p
+
+    double theta;
+    Eigen::Matrix3d omega;
+    SO3_log(SE3_element.block<3, 3>(0, 0), &theta, &omega);
+
+    // conversion from omega matrix to omega vector, then multiplication by
+    // theta
+    Eigen::Vector3d omega_theta;
+    omega_theta << theta * omega(2, 1), -theta * omega(2, 0),
+        theta * omega(1, 0);
+
+    const Eigen::Vector3d p = SE3_element.block<3, 1>(0, 3);
+
+    const Eigen::Vector3d omega_p = omega * p;
+    const Eigen::Vector3d v_theta =
+        p - 0.5f * theta * omega_p +
+        (1.0f - x_cotx(theta / 2)) * omega * omega_p;
+
+    Eigen::VectorD<6> result;
+    result.head<3>() = omega_theta;
+    result.tail<3>() = v_theta;
+    return result;
+}
+
 Eigen::Matrix<double, 3, 3> so3_vec_to_mat(
     const Eigen::Matrix<double, 3, 1>& vec) {
 
@@ -178,8 +284,8 @@ ScrewData make_screw_data_from_twist(const Eigen::Matrix<double, 6, 1>& twist) {
 
 Eigen::Matrix<double, 4, 4> exp_screw(const ScrewData& screw_data,
                                       const double distance) {
-    const float s = std::sin(distance);
-    const float c = std::cos(distance);
+    const double s = std::sin(distance);
+    const double c = std::cos(distance);
 
     Eigen::Matrix<double, 4, 4> result;
     result.row(3) << 0, 0, 0, 1;
@@ -336,8 +442,9 @@ Eigen::VectorD<2> camera_project(
 
 double camera_project_factor(
     const Eigen::VectorD<16>& input,
-    const std::vector<Eigen::VectorD<4>>& object_points,
-    const std::vector<Eigen::VectorD<2>>& image_points,
+    const size_t num_points,
+    const Eigen::VectorD<4>* object_points,
+    const Eigen::VectorD<2>* image_points,
     Eigen::SquareD<16>* JtJ_ptr,
     Eigen::VectorD<16>* Jtr_ptr) {
 
@@ -348,6 +455,7 @@ double camera_project_factor(
     return camera_project_factor(camparams,
                                  se3_world_camera,
                                  se3_world_object,
+                                 num_points,
                                  object_points,
                                  image_points,
                                  JtJ_ptr, Jtr_ptr);
@@ -361,9 +469,27 @@ double camera_project_factor(
     const std::vector<Eigen::VectorD<2>>& image_points,
     Eigen::SquareD<16>* JtJ_ptr,
     Eigen::VectorD<16>* Jtr_ptr) {
-
     assert(object_points.size() == image_points.size());
     assert(!object_points.empty());
+    return camera_project_factor(
+        fxfycxcy,
+        se3_world_camera,
+        se3_world_object,
+        object_points.size(),
+        object_points.data(),
+        image_points.data(),
+        JtJ_ptr, Jtr_ptr);
+}
+
+double camera_project_factor(
+    const Eigen::VectorD<4>& fxfycxcy,
+    const Eigen::VectorD<6>& se3_world_camera,
+    const Eigen::VectorD<6>& se3_world_object,
+    size_t num_points,
+    const Eigen::VectorD<4>* object_points,
+    const Eigen::VectorD<2>* image_points,
+    Eigen::SquareD<16>* JtJ_ptr,
+    Eigen::VectorD<16>* Jtr_ptr) {
 
     auto se3_camera_world = (-se3_world_camera).eval();
     auto tx_camera_world = se3_exp(se3_camera_world);
@@ -383,7 +509,8 @@ double camera_project_factor(
 
     double error2 = 0;
 
-    for (size_t i = 0; i < object_points.size(); ++i) {
+    // std::cout << "in camera project factor \n";    
+    for (size_t i = 0; i < num_points; ++i) {
         Eigen::MatrixD<2, 4> dxy_dcamparams;
         Eigen::MatrixD<2, 6> dxy_dcamera;
         Eigen::MatrixD<2, 6> dxy_dobject;
@@ -399,7 +526,13 @@ double camera_project_factor(
             &dxy_dcamera,
             &dxy_dobject);
 
+        // std::cout << "\timage point " << i << ": " << image_points[i].transpose() << "\n";
+        // std::cout << "\tobject point " << i << ": " << object_points[i].transpose() << "\n";
+        // std::cout << "\tprojected point " << i << ": " << projected_img_point.transpose() << "\n";
+
         auto residual = image_points[i] - projected_img_point;
+        // std::cout << "\terr2 " << residual.squaredNorm() << "\n";
+
 
         error2 += residual.squaredNorm();
 

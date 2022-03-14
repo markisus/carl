@@ -14,6 +14,8 @@ Eigen::Matrix<double, 4, 4> se3_exp(const Eigen::Matrix<double, 6, 1>& se3);
 Eigen::Matrix<double, 4, 4> se3_vec_to_mat(const Eigen::Matrix<double, 6, 1>& se3);
 Eigen::Matrix<double, 6, 1> se3_mat_to_vec(const Eigen::Matrix<double, 4, 4>& se3);
 
+Eigen::VectorD<6> SE3_log(const Eigen::Matrix4d& SE3_element);
+
 Eigen::Matrix<double, 2, 1> apply_camera_matrix(
     const Eigen::Matrix<double, 4, 1>& fxfycxcy,
     const Eigen::Matrix<double, 4, 1>& xyzw,
@@ -54,19 +56,60 @@ Eigen::VectorD<2> camera_project(
 
 double camera_project_factor(
     const Eigen::VectorD<16>& input,
-    const std::vector<Eigen::VectorD<4>>& object_points,
-    const std::vector<Eigen::VectorD<2>>& image_points,
-    Eigen::SquareD<16>* JtJ_ptr = nullptr,
-    Eigen::VectorD<16>* Jtr_ptr = nullptr);
+    const size_t num_points,
+    const Eigen::VectorD<4>* object_points,
+    const Eigen::VectorD<2>* image_points,
+    Eigen::SquareD<16>* JtJ_ptr,
+    Eigen::VectorD<16>* Jtr_ptr);
 
 double camera_project_factor(
     const Eigen::VectorD<4>& fxfycxcy,
     const Eigen::VectorD<6>& se3_world_camera,
     const Eigen::VectorD<6>& se3_world_object,
-    const std::vector<Eigen::VectorD<4>>& object_points,
-    const std::vector<Eigen::VectorD<2>>& image_points,
+    const size_t num_points,
+    const Eigen::VectorD<4>* object_points,
+    const Eigen::VectorD<2>* image_points,
     Eigen::SquareD<16>* JtJ_ptr = nullptr,
     Eigen::VectorD<16>* Jtr_ptr = nullptr);
 
+// shim for std::vector, std::array style containers
+template <typename T, typename U>
+inline double camera_project_factor(
+    const Eigen::VectorD<4>& fxfycxcy,
+    const Eigen::VectorD<6>& se3_world_camera,
+    const Eigen::VectorD<6>& se3_world_object,
+    const T& object_points,
+    const U& image_points,
+    Eigen::SquareD<16>* JtJ_ptr = nullptr,
+    Eigen::VectorD<16>* Jtr_ptr = nullptr) {
+
+    assert(object_points.size() == image_points.size());
+    assert(!object_points.empty());
+    return camera_project_factor(fxfycxcy,
+                                 se3_world_camera,
+                                 se3_world_object,
+                                 object_points.size(),
+                                 object_points.data(),
+                                 image_points.data(),
+                                 JtJ_ptr, Jtr_ptr);
+};
+
+// shim for std::vector, std::array style containers
+template <typename T, typename U>
+inline double camera_project_factor(
+    const Eigen::VectorD<16>& lin_point,
+    const T& object_points,
+    const U& image_points,
+    Eigen::SquareD<16>* JtJ_ptr = nullptr,
+    Eigen::VectorD<16>* Jtr_ptr = nullptr) {
+
+    assert(object_points.size() == image_points.size());
+    assert(!object_points.empty());
+    return camera_project_factor(lin_point,
+                                 object_points.size(),
+                                 object_points.data(),
+                                 image_points.data(),
+                                 JtJ_ptr, Jtr_ptr);
+};
 
 }  // carl

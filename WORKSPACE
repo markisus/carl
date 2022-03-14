@@ -58,3 +58,17 @@ pip_install(
    name = "python_deps",
    requirements = "//:requirements.txt",
 )
+
+# Remap system libraries (e.g. installed with apt)
+new_local_repository(
+  name = "usr",
+  path = "/usr",
+  build_file = "usr.BUILD",
+)
+
+http_archive(
+  name = "com_google_absl",
+  urls = ["https://github.com/abseil/abseil-cpp/archive/98eb410c93ad059f9bba1bf43f5bb916fc92a5ea.zip"],
+  strip_prefix = "abseil-cpp-98eb410c93ad059f9bba1bf43f5bb916fc92a5ea",
+  sha256 = "aabf6c57e3834f8dc3873a927f37eaf69975d4b28117fc7427dfb1c661542a87"
+)

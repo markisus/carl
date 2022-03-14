@@ -73,7 +73,24 @@ cc_binary(
         ":gaussian_math",
         "@com_github_google_benchmark//:benchmark_main",
     ],
-)    
+)
+
+cc_library(
+    name="tag_mapper",
+    srcs=[
+        "tag_mapper.cpp",
+        "tag_mapper.h",
+    ],
+    hdrs=[
+        "tag_mapper.h"
+    ],
+    deps=[
+        "@com_gitlab_libeigen_eigen//:eigen",
+        ":eigen_util",
+        ":factor_graph",
+        ":geometry",
+
+    ])
 
 cc_binary(
     name="simulation_a",
@@ -86,7 +103,23 @@ cc_binary(
         ":geometry",
         "@com_github_skypjack_entt//:entt",
         "@com_gitlab_libeigen_eigen//:eigen",
-    ])    
+    ])
+
+cc_binary(
+    name="simulation_b",
+    srcs=[
+        "simulation_b.cpp"
+    ],
+    deps=[
+        ":tag_mapper",
+        ":eigen_util",
+        ":geometry",
+        "@usr//:opencv",
+        "@com_gitlab_libeigen_eigen//:eigen",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
+
+    ])
     
 
 py_binary(

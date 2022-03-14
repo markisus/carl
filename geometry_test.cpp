@@ -125,6 +125,17 @@ TEST(se3_exp, vs_generic_eigen) {
     EXPECT_LT(lpInf(eigen_result, my_result), 1e-6);
 }
 
+TEST(SE3_log, vs_generic_eigen) {
+    auto input = se3_exp(Eigen::random_vec<6>().eval());
+    auto eigen_result = se3_mat_to_vec(input.log().eval());
+    auto my_result = SE3_log(input);
+
+    // std::cout << "eigen result\n " << eigen_result << "\n";
+    // std::cout << "my result\n " << my_result << "\n";
+
+    EXPECT_LT(lpInf(eigen_result, my_result), 1e-4);
+}
+
 TEST(se3_vec_to_mat, round_trip) {
     auto se3 = Eigen::random_vec<6>();
     auto se3_mat = se3_vec_to_mat(se3);
