@@ -52,17 +52,6 @@ cc_library(
         ":gaussian_math",
         ":eigen_util",
     ])
-
-cc_binary(
-    name="scratch3",
-    srcs=[
-        "scratch3.cpp",
-    ],
-    deps=[
-        ":factor_graph",
-        "@com_github_skypjack_entt//:entt",
-        "@com_gitlab_libeigen_eigen//:eigen",
-    ])    
     
 cc_binary(
     name="math_benchmark",
@@ -93,32 +82,22 @@ cc_library(
     ])
 
 cc_binary(
-    name="simulation_a",
-    srcs=[
-        "simulation_a.cpp",
-    ],
-    deps=[
-        ":factor_graph",
-        ":eigen_util",
-        ":geometry",
-        "@com_github_skypjack_entt//:entt",
-        "@com_gitlab_libeigen_eigen//:eigen",
-    ])
-
-cc_binary(
     name="simulation_b",
     srcs=[
-        "simulation_b.cpp"
+        "simulation_b.cpp",
+        "imgui_overlayable.h"
     ],
     deps=[
         ":tag_mapper",
         ":eigen_util",
         ":geometry",
         "@usr//:opencv",
+        "@com_github_nothings_stb//:stb",
+        "@com_github_floooh_sokol//:sokol",
+        "@com_github_ocornut_imgui//:imgui",
         "@com_gitlab_libeigen_eigen//:eigen",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings",
-
     ])
     
 

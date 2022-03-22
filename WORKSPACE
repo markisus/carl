@@ -23,6 +23,50 @@ http_archive(
     sha256 = "b182fb2625d0da580f27b86bfe07fed0e92154f213b48223d225587e63dd5ea8",
     strip_prefix = "entt-3328c7e78bcf638a78d7a601d3780a10e7dd712c")
 
+http_archive(
+    name = "com_github_floooh_sokol",
+    url = "https://github.com/floooh/sokol/archive/a18031313cdf7dab461baa296c38b07337ab4d47.zip",
+    strip_prefix = "sokol-a18031313cdf7dab461baa296c38b07337ab4d47",
+    sha256 = "ce0fec4696bfe68f7ab642df679041bab8253e33c95add52765614b6b236dc45",
+    build_file_content = """
+cc_library(
+    name = 'sokol',
+    srcs = [],
+    includes = ['.'],
+    hdrs = glob(['*.h']) + ['util/sokol_imgui.h'],
+    linkopts = ['-lGL', '-lX11', '-ldl', '-lXcursor', '-lXi'],
+    visibility = ['//visibility:public'],
+)
+"""
+)
+
+stb_version = "af1a5bc352164740c1cc1354942b1c6b72eacb8a"
+http_archive(
+    name = "com_github_nothings_stb",
+    url = "https://github.com/nothings/stb/archive/{}.zip".format(stb_version),
+    strip_prefix = "stb-{}".format(stb_version),
+    build_file_content = """
+cc_library(
+    name = 'stb',
+    hdrs = ['stb_image.h'], # add others if necessary
+    visibility = ['//visibility:public'],
+)
+"""
+)
+
+http_archive(
+    name = "com_github_ocornut_imgui",
+    url = "https://github.com/ocornut/imgui/archive/refs/tags/v1.87.zip",
+    strip_prefix = "imgui-1.87",
+    build_file_content = """
+cc_library(
+    name = 'imgui',
+    srcs = glob(['*.cpp', '*.h']),
+    hdrs = glob(['*.h']),
+    visibility = ['//visibility:public'],    
+)
+""")
+
 gtest_version = "c9461a9b55ba954df0489bab6420eb297bed846b"
 http_archive(
     name = "com_github_google_googletest",
