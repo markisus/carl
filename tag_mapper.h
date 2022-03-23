@@ -22,8 +22,10 @@ struct TagMapperConfig {
 // pimpl idion
 struct TagMapperImpl; 
 struct TagMapper {
-    TagMapper(TagMapperConfig&& config);
+    TagMapper();
     ~TagMapper();
+
+    TagMapperConfig& config();
 
     bool have_camera(int camera_id);
     void init_camera(int camera_id, const Eigen::VectorD<4>& camparams);

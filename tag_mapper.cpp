@@ -41,7 +41,7 @@ struct TagMapperImpl {
 
     TagMapperConfig config;
 
-    FactorGraph</*factor_dims=*/Dims<4, 6, 16>, /*variable_dims=*/Dims<4, 6>> graph;
+    FactorGraph</*factor_dims=*/Dims<16>, /*variable_dims=*/Dims<4, 6>> graph;
     std::unordered_map<int, VariableHandle<4>> camparam_handles;
     std::unordered_map<int, VariableHandle<6>> camera_pose_handles;
     std::unordered_map<int, VariableHandle<6>> tag_pose_handles;
@@ -58,7 +58,7 @@ struct TagMapperImpl {
     void init_camera(int camera_id, const Eigen::VectorD<4>& camparams) {
         assert(!have_camera(camera_id));
         const auto camparam_handle = graph.add_variable(
-            CAMERA_POSE, camparams, (Eigen::id<4>() * 1e-6).eval());
+            CAMERA_PARAMS, camparams, (Eigen::id<4>() * 1e-6).eval());
         camparam_handles.insert({ camera_id,  camparam_handle});
     };
 
@@ -144,8 +144,11 @@ struct TagMapperImpl {
             total_err2 += err2;
         }
         graph.end_linearization();
+
+
         graph.update_factors();
         graph.update_variables();
+
         return total_err2;
     }
 
@@ -171,9 +174,8 @@ struct TagMapperImpl {
     };
 };
 
-TagMapper::TagMapper(TagMapperConfig&& config) {
+TagMapper::TagMapper() {
     impl_ = std::make_unique<TagMapperImpl>();
-    impl_->config = std::move(config);
 }
 
 TagMapper::~TagMapper() = default; 
@@ -224,6 +226,10 @@ bool TagMapper::have_image(int image_id) {
 void TagMapper::init_image(int image_id, const Eigen::SquareD<4>& tx_world_camera) {
     return impl_->init_image(image_id, tx_world_camera);
 };
+
+TagMapperConfig& TagMapper::config() {
+    return impl_->config;
+}
 
 
 }  // carl

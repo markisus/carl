@@ -42,7 +42,7 @@ struct AppState {
     std::unordered_map<int, StbImage> images;
     std::map<int, sg_image> sg_images;
     std::unordered_map<int, std::unordered_map<int, std::array<Eigen::VectorD<2>, 4>>> tag_image_points;
-    std::shared_ptr<TagMapper> tag_mapper;
+    TagMapper tag_mapper;
     std::unordered_set<int> images_to_add;
     bool tag_mapper_loaded = false;
     Eigen::VectorD<4> camparams;
@@ -238,12 +238,10 @@ void load_tag_mapper(AppState* app) {
     app->camparams = load_camparams();
     auto& camparams = app->camparams;
 
-    TagMapperConfig config;
-    config.default_tag_side_length = tag_side_length;
-    config.default_camparams = camparams;
-    
-    app->tag_mapper = std::make_shared<TagMapper>( std::move(config) );
-    TagMapper& tag_mapper = *(app->tag_mapper);    
+    app->tag_mapper.config().default_tag_side_length = tag_side_length;
+    app->tag_mapper.config().default_camparams = camparams;
+
+    TagMapper& tag_mapper = app->tag_mapper;    
     tag_mapper.init_camera(0, camparams);
 
     int image_with_most_tags = -1;
@@ -285,7 +283,7 @@ void add_tag_mapper_image(AppState* app) {
 
     auto& images_to_add = app->images_to_add;
     auto& tag_image_points = app->tag_image_points;
-    auto& tag_mapper = *(app->tag_mapper);
+    auto& tag_mapper = app->tag_mapper;
 
     std::cout << "Selecting an image to add" << "\n";
     int best_image_to_add = -1;
@@ -406,7 +404,7 @@ void frame_cb() {
     const float window_width = ImGui::GetWindowWidth();
     ImGui::Text("%lu images", app.images.size());
     for (auto &&[id, img] : app.sg_images) {
-        if (!app.tag_mapper->have_image(id)) {
+        if (!app.tag_mapper.have_image(id)) {
             continue;
         }
         const auto info = sg_query_image_info(img);
@@ -425,19 +423,19 @@ void frame_cb() {
             }
         }
 
-        const auto tx_world_camera = app.tag_mapper->get_camera_pose(id);
+        const auto tx_world_camera = app.tag_mapper.get_camera_pose(id);
         if (app.show_projects) {
-            const auto camparams = app.tag_mapper->get_camparams(0);        
+            const auto camparams = app.tag_mapper.get_camparams(0);        
             
             for (auto&& [tag, pts] : app.tag_image_points[id]) {
-                if (!app.tag_mapper->have_tag(tag)) {
+                if (!app.tag_mapper.have_tag(tag)) {
                     continue;
                 }
 
                 std::array<Eigen::VectorD<2>, 4> proj_points;
 
                 // take the tag from the tagmapper
-                const Eigen::SquareD<4> tx_world_tag = app.tag_mapper->get_tag_pose(tag);
+                const Eigen::SquareD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
                 const Eigen::SquareD<4> tx_camera_tag = tx_world_camera.inverse() * tx_world_tag;
                 const auto tag_corners = make_tag_corners(tag_side_length);
                 for (int i = 0; i < 4; ++i) {
@@ -467,14 +465,15 @@ void frame_cb() {
     ImGui::Checkbox("Show Projects", &app.show_projects);
     ImGui::Checkbox("Show Detects", &app.show_detects);
     ImGui::Checkbox("Optimize", &app.optimize);
-    if (app.optimize && app.tag_mapper_loaded) {
-        app.last_err = app.tag_mapper->update();
+    const bool optimize_once = ImGui::Button("Optimize Once");
+    if ((app.optimize || optimize_once) && app.tag_mapper_loaded) {
+        app.last_err = app.tag_mapper.update();
     }
     ImGui::End();
 
     ImGui::Begin("Info");
     if (app.tag_mapper_loaded) {
-        auto camparams = app.tag_mapper->get_camparams(0);
+        auto camparams = app.tag_mapper.get_camparams(0);
         ImGui::Text("camparams: %s", eigen_to_string(camparams.transpose()).c_str());
         ImGui::Text("last err: %f", app.last_err);
         ImGui::Text("last err stddev: %f", sqrt(app.last_err/app.num_tags_added));

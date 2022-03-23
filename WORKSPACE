@@ -45,6 +45,7 @@ http_archive(
     name = "com_github_nothings_stb",
     url = "https://github.com/nothings/stb/archive/{}.zip".format(stb_version),
     strip_prefix = "stb-{}".format(stb_version),
+    sha256 = "e3d0edbecd356506d3d69b87419de2f9d180a98099134c6343177885f6c2cbef",
     build_file_content = """
 cc_library(
     name = 'stb',
