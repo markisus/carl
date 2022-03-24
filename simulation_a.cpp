@@ -76,8 +76,7 @@ int main(int argc, char *argv[])
     graph.add_edge(camera_variable, factor, 4);
     graph.add_edge(object_variable, factor, 10);
 
-    graph.regularizer = 1e9;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 10; ++i) {
         std::cout << "iteration " << i << " ==============\n";
         graph.begin_linearization();
 
