@@ -100,11 +100,6 @@ struct TagMapperImpl {
         cov.block<3,3>(0,0) *= 0.5;
         cov *= 0.005;
 
-        if (camera_pose_handles.empty()) {
-            // special case: first camera ever added
-            cov *= 1e-6;
-        }
-
         const auto camera_pose_handle = graph.add_variable(
             CAMERA_POSE,
             se3_world_camera, cov);
