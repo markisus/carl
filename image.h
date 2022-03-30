@@ -9,6 +9,7 @@ public:
     Image() = default;
 
     void load(const std::string& path, bool make_texture = false);
+    void make_texture(); // needs load() to be called previously
 
     ~Image();
 

@@ -24,6 +24,7 @@ struct TagMapper {
     ~TagMapper();
 
     const std::vector<std::string>& image_list();
+    const std::vector<int>& tag_list();
 
     void load_scene(const std::filesystem::path& scene_path);
     Scene& get_scene();

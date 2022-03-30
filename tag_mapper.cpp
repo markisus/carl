@@ -40,6 +40,7 @@ struct TagMapperImpl {
     };
 
     std::vector<std::string> _image_list;
+    std::vector<int> _tag_list;
 
     void load_scene(const std::filesystem::path& scene_path) {
         assert(!scene_initted);
@@ -85,6 +86,7 @@ struct TagMapperImpl {
         tag_pose_handles.insert({ tag_id, tag_pose_handle });
 
         graph.set_display_string(tag_pose_handle, absl::StrFormat("tag:%d", tag_id));
+        _tag_list.push_back(tag_id);
     };
 
     bool have_image(const std::string& image_id) {
@@ -115,6 +117,10 @@ struct TagMapperImpl {
 
     const std::vector<std::string>& image_list() {
         return _image_list;
+    }
+
+    const std::vector<int>& tag_list() {
+        return _tag_list;
     }
 
     Eigen::MatrixD<4> get_camera_pose(const std::string& image_id, Eigen::MatrixD<6>* covariance = nullptr) {
@@ -310,6 +316,11 @@ void TagMapper::visit_factor_layout(void(*visiter)(LayoutData*, FactorError*, vo
 const std::vector<std::string>& TagMapper::image_list() {
     return impl_->image_list();
 }
+
+const std::vector<int>& TagMapper::tag_list() {
+    return impl_->tag_list();
+}
+
 
 std::array<double,2> TagMapper::layout_size() {
     return impl_->layout_size();

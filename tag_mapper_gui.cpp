@@ -27,9 +27,12 @@
 #include "tag_mapper_data.h"
 #include "layout_data.h"
 #include "image.h"
+#include "thread_pool.h"
 
 using namespace carl;
 using namespace tag_mapper;
+
+ThreadPool thread_pool = {/*num_threads=*/1};
 
 struct AppState {
     bool images_loaded = false;
@@ -49,6 +52,20 @@ struct AppState {
     bool show_projects = true;
 
     ImGuiOverlayable graph_display;
+
+    int selected_image_idx = -1;
+    std::string selected_image_id = "";
+
+    int selected_tag_idx = -1;
+    int selected_tag_id = 0;
+
+    // camera control for 3d view
+    float dx = 0;
+    float dy = 0;
+    float dz = 0;
+    float droll = 0;
+    float dpitch = 0;
+    float dyaw = 0;
 };
 
 std::array<Eigen::VectorD<4>, 4> make_tag_corners(double side_length) {
@@ -265,6 +282,8 @@ const uint32_t tag_colors[4] = {
     ImColor(1.0f, 1.0f, 0.0f, 1.0f)
 };
 
+const float MAX_DISPLAY_AGE = 100;
+
 void display_variable(LayoutData* layout, VariableError* error, void* d) {
     AppState& app = *((AppState*)d);
 
@@ -276,7 +295,7 @@ void display_variable(LayoutData* layout, VariableError* error, void* d) {
     for (int i = 0; i < 2; ++i) {
         if (i == 0) {
             float age = (float)error->age;
-            age = std::min<float>(age/4.0f, 1);
+            age = std::min<float>(age/MAX_DISPLAY_AGE, 1);
             lits[i] = 1.0 - age;
         }
         if (i == 1) {
@@ -315,7 +334,7 @@ void display_factor(LayoutData* layout, FactorError* error, void* d) {
     for (int i = 0; i < 2; ++i) {
         if (i == 0) {
             float age = (float)error->age;
-            age = std::min<float>(age/4.0f, 1);
+            age = std::min<float>(age/MAX_DISPLAY_AGE, 1);
             lits[i] = 1.0 - age;
         }
         if (i == 1) {
@@ -363,19 +382,19 @@ void display_edge(LayoutData* l_v, LayoutData* l_f, EdgeResidual* residual, void
         l_v->position(0),
         l_v->position(1),
         center(0), center(1),
-        ImColor::HSV(1.0f, to_var_redness, 1.0f, 0.5f),
-        3.0);
+        ImColor::HSV(1.0f, to_var_redness, 1.0f, 0.3f + 0.7*to_var_redness),
+        1.0);
 
     app.graph_display.add_line(
         l_f->position(0),
         l_f->position(1),
         center(0), center(1),
-        ImColor::HSV(1.0f, to_factor_redness, 1.0f, 0.5f),
-        3.0);
+        ImColor::HSV(1.0f, to_factor_redness, 1.0f, 0.3f + 0.7*to_factor_redness),
+        1.0);
 
     auto picker = app.graph_display.add_circle(
         center(0), center(1), 0.05,
-        ImColor::HSV(1.0f, 0.0f, 1.0f, 1.0f));
+        ImColor::HSV(1.0f, 0.0f, 1.0f, 0.3f));
 
     if (picker.contains(ImGui::GetMousePos())) {
         ImGui::SetTooltip("residuals\nto_factor: %f\nto_variable: %f",
@@ -414,7 +433,6 @@ void frame_cb() {
     ImGui::SetNextWindowSize(ImVec2{frame_desc.width,frame_desc.height});
     ImGui::Begin("UI", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
     {
-        static int selected_image_idx = -1;
         ImGui::BeginChild("left pane", ImVec2(400, 0), true);
         {
             ImGui::Checkbox("Optimize", &app.optimize);
@@ -439,17 +457,19 @@ void frame_cb() {
             // ImGui::Text("last err: %f", app.last_err);
             // ImGui::Text("last err stddev: %f", sqrt(app.last_err/app.num_tags_added));
             
-            ImGui::Text("Images (%lu / %lu)", app.images.size(), app.tag_mapper.get_scene().tag_detections.size());
+            ImGui::Text("Images (%lu / %lu)", app.tag_mapper.image_list().size(), scene.tag_detections.size());
             const auto& images = app.tag_mapper.image_list();
             if (ImGui::BeginListBox("##Images Selector", ImVec2(-FLT_MIN, 10*ImGui::GetTextLineHeightWithSpacing()))) {
                 for (int i = -1; i < int(images.size()); ++i) {
-                    const bool is_selected = (selected_image_idx == i);
+                    const bool is_selected = (app.selected_image_idx == i);
                     if (i == -1) {
                         if (ImGui::Selectable("Select All", is_selected)) {
-                            selected_image_idx = -1;
+                            app.selected_image_idx = -1;
+                            app.selected_image_id = "";
                         }
                     } else if (ImGui::Selectable(images[i].c_str(), is_selected)) {
-                        selected_image_idx = i;
+                        app.selected_image_idx = i;
+                        app.selected_image_id = images[i];
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
@@ -457,6 +477,28 @@ void frame_cb() {
                 }
             }
             ImGui::EndListBox();
+
+            ImGui::Text("Tags");
+            const auto& tags = app.tag_mapper.tag_list();
+            if (ImGui::BeginListBox("##Tags Selector", ImVec2(-FLT_MIN, 10*ImGui::GetTextLineHeightWithSpacing()))) {
+                for (int i = -1; i < int(tags.size()); ++i) {
+                    const bool is_selected = (app.selected_tag_idx == i);
+                    if (i == -1) {
+                        if (ImGui::Selectable("Select All", is_selected)) {
+                            app.selected_tag_idx = -1;
+                            app.selected_tag_id = -1;
+                        }
+                    } else if (ImGui::Selectable(std::to_string(tags[i]).c_str(), is_selected)) {
+                        app.selected_tag_idx = i;
+                        app.selected_tag_id = tags[i];
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }              
+                }
+            }
+            ImGui::EndListBox();
+            
             if (!app.images_to_add.empty() && ImGui::Button("Add image")) {
                 add_tag_mapper_image(&app);
             }
@@ -466,124 +508,252 @@ void frame_cb() {
 
         ImGui::BeginChild("right pane", ImVec2(0, 0), true);
         {
+            int selected_tab = 0;            
             const float window_width = ImGui::GetWindowWidth();
             if (ImGui::BeginTabBar("right pane bar")) {
                 if (ImGui::BeginTabItem("Image View")) {
                     ImGui::Checkbox("Show Projects", &app.show_projects); ImGui::SameLine(); ImGui::Checkbox("Show Detects", &app.show_detects);
-                    const int num_images_per_line = 4;
-                    int image_idx = 1;
-                    for (const auto& id : app.tag_mapper.image_list()) {
-                        if (!app.images.count(id)) {
-                            std::cout << "loading image id " << id << "\n";
-                            if (!app.tag_mapper.get_scene().image_paths.count(id)) {
-                                // image missing: try to pull a default width and height from another image
-                                std::cout << "\timage missing" << "\n";
-                                int default_width = 10;
-                                int default_height = 5;
-                                for (const auto& [other_image_id, other_image] : app.images) {
-                                    if (other_image.data) {
-                                        default_width = other_image.width;
-                                        default_height = other_image.height;
-                                        break;
-                                    }
-                                }
-                                app.images[id].width = default_width;
-                                app.images[id].height = default_height;
-                            } else {
-                                const std::string& path = app.tag_mapper.get_scene().image_paths.at(id);
-                                app.images[id].load(path, /*make_texture=*/true);
-                                const auto& img_data = app.images[id];
-                                std::cout << "image loaded " << img_data.width << " x " << img_data.height << "\n";
-                            }
-                        }
-                        const auto& img_data = app.images[id];
-
-                        ImGuiOverlayable image;
-                        if (img_data.texture) {
-                            image = ImGuiOverlayable::Image((void*)img_data.texture, img_data.width, img_data.height, (window_width-10)/num_images_per_line);
-                        } else {
-                            image = ImGuiOverlayable::Rectangle(img_data.width, img_data.height, (window_width-10)/num_images_per_line);
-                        }
-                        if ((image_idx % num_images_per_line) != 0) {
-                            ImGui::SameLine();
-                        }
-                        image_idx += 1;
-
-                        if (app.show_detects) {
-                            for (auto&& [tag, pts] : scene.tag_detections[id]) {
-                                image.add_text(float(pts[0](0)), float(pts[0](1)),
-                                               ImColor::HSV(0.3f, 1.0, 1.0f, 1.0f),
-                                               std::to_string(tag).c_str());
-                
-                                for (int idx =0; idx < int(pts.size()); ++idx) {
-                                    int next_idx = (idx + 1) % pts.size();
-                                    const auto& pt = pts[idx];
-                                    const auto& next_pt = pts[next_idx];
-                                    image.add_line(float(pt(0)), float(pt(1)),
-                                                   float(next_pt(0)), float(next_pt(1)),
-                                                   tag_colors[idx]);
-
-                                }
-                            }
-                        }
-
-                        const auto tx_world_camera = app.tag_mapper.get_camera_pose(id);
-                        if (app.show_projects) {
-                            const auto camparams = app.tag_mapper.get_camparams();        
-            
-                            for (auto&& [tag, pts] : scene.tag_detections[id]) {
-                                if (!app.tag_mapper.have_tag(tag)) {
-                                    continue;
-                                }
-
-                                std::array<Eigen::VectorD<2>, 4> proj_points;
-
-                                // take the tag from the tagmapper
-                                const Eigen::MatrixD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
-                                const Eigen::MatrixD<4> tx_camera_tag = tx_world_camera.inverse() * tx_world_tag;
-                                const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
-                                for (int i = 0; i < 4; ++i) {
-                                    Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];
-                                    Eigen::VectorD<2> proj_point = apply_camera_matrix(camparams, camera_point);
-                                    proj_points[i] = proj_point;
-                                }
-
-                                // project it
-                                for (int idx =0; idx < int(proj_points.size()); ++idx) {
-                                    int next_idx = (idx + 1) % proj_points.size();
-                                    const auto& pt = proj_points[idx];
-                                    const auto& next_pt = proj_points[next_idx];
-                                    image.add_line(float(pt(0)), float(pt(1)),
-                                                   float(next_pt(0)), float(next_pt(1)),
-                                                   tag_colors[idx]);
-                                }
-                            }
-                        }
-                    }
+                    selected_tab = 0;
                     ImGui::EndTabItem();
                 }
                 if (ImGui::BeginTabItem("Graph View")) {
-                    const float window_height = ImGui::GetWindowHeight();
-                    
-                    app.last_layout_err = app.tag_mapper.update_layout(&app.layout_converged);
+                    selected_tab = 1;
 
+                    app.last_layout_err = app.tag_mapper.update_layout(&app.layout_converged);
                     ImGui::Text("Layout Err: %f", app.last_layout_err);
                     ImGui::SameLine();
                     ImGui::Text("Layout Converged: %s", app.layout_converged ? "yes" : "no");
 
-                    auto [width, height] = app.tag_mapper.layout_size();
-                    const double data_size = std::max(width, height) * 1.2;
-                    const double display_size = std::min(window_height-150, window_width-50);
-                    app.graph_display = ImGuiOverlayable::Rectangle(data_size, data_size, display_size);
-                    app.graph_display.data_center_x = 0;
-                    app.graph_display.data_center_y = 0;
-                    app.tag_mapper.visit_edge_layout(display_edge, (void*)(&app));        
-                    app.tag_mapper.visit_factor_layout(display_factor, (void*)(&app));
-                    app.tag_mapper.visit_variable_layout(display_variable, (void*)(&app));
+                    ImGui::EndTabItem();
+                }
+                if (ImGui::BeginTabItem("3D View")) {
+                    selected_tab = 2;
+
+                    ImGui::SliderFloat("dx", &app.dx, -0.5, 0.5 );
+                    ImGui::SliderFloat("dy",  &app.dy, -0.5, 0.5);
+                    ImGui::SliderFloat("dz", &app.dz, -0.5, 0.5);
+                    ImGui::SliderFloat("droll",  &app.droll, -0.5, 0.5);
+                    ImGui::SliderFloat("dpitch",  &app.dpitch, -0.5, 0.5);
+                    ImGui::SliderFloat("dyaw",  &app.dyaw, -0.5, 0.5);
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
             }
+
+            ImGui::BeginChild("tab contents");
+            if (selected_tab == 0) {
+                // num images per line depends on if we're viewing all, or 1 image
+                int num_images_per_line = app.selected_image_idx == -1 ? 4 : 1;
+                int image_idx = 1;
+
+                if (app.selected_image_idx != -1 &&
+                    app.selected_tag_idx != -1) {
+                    if(!scene.tag_detections[app.selected_image_id].count(app.selected_tag_id)) {
+                        ImGui::Text("tag:%d does not appear in image:%s",
+                                    app.selected_tag_id, app.selected_image_id.c_str());
+
+                        if (ImGui::Button("View all tags in this image")) {
+                            app.selected_tag_idx = -1;
+                            app.selected_tag_id = -1;
+                        }
+
+                        if (ImGui::Button("View all images containing this tag")) {
+                            app.selected_image_idx = -1;
+                            app.selected_image_id = "";
+                        }
+                    }
+                }
+                
+                for (const auto& id : app.tag_mapper.image_list()) {
+                    if (app.selected_image_idx != -1 &&
+                        app.selected_image_id != id) {
+                        continue;
+                    }
+
+                    if (app.selected_tag_idx != -1) {
+                        // don't display this image if it has none
+                        // of the selected tags
+                        if (!scene.tag_detections[id].count(app.selected_tag_id)) {
+                            continue;
+                        }
+                    }
+                    
+                    if (!app.images.count(id)) {
+                        // init the image
+                        auto& image_data = app.images[id];
+
+                        // put a placholder for now
+                        int default_width = 10;
+                        int default_height = 5;
+                        for (const auto& [other_image_id, other_image] : app.images) {
+                            if (other_image.data) {
+                                default_width = other_image.width;
+                                default_height = other_image.height;
+                                break;
+                            }
+                        }
+                        image_data.width = default_width;
+                        image_data.height = default_height;
+
+                        // start a job to load the image
+                        if (scene.image_paths.count(id)) {
+                            const std::string& path = scene.image_paths.at(id);
+                            thread_pool.Push([path, &image_data](){
+                                image_data.load(path, /*make_texture=*/false);                                    
+                            });
+                        }
+                    }
+
+                    auto& img_data = app.images[id];
+                    if (!img_data.texture && img_data.data) {
+                        // texture making must be done on main thread
+                        img_data.make_texture();
+                    }
+
+                    ImGuiOverlayable image;
+                    if (img_data.texture) {
+                        image = ImGuiOverlayable::Image((void*)img_data.texture, img_data.width, img_data.height, (window_width-10)/num_images_per_line);
+                    } else {
+                        image = ImGuiOverlayable::Rectangle(img_data.width, img_data.height, (window_width-10)/num_images_per_line);
+                    }
+                    if ((image_idx % num_images_per_line) != 0) {
+                        ImGui::SameLine();
+                    }
+                    image_idx += 1;
+
+                    if (app.show_detects) {
+                        for (auto&& [tag, pts] : scene.tag_detections[id]) {
+                            image.add_text(float(pts[0](0)), float(pts[0](1)),
+                                           ImColor::HSV(0.3f, 1.0, 1.0f, 1.0f),
+                                           std::to_string(tag).c_str());
+                
+                            for (int idx =0; idx < int(pts.size()); ++idx) {
+                                int next_idx = (idx + 1) % pts.size();
+                                const auto& pt = pts[idx];
+                                const auto& next_pt = pts[next_idx];
+                                image.add_line(float(pt(0)), float(pt(1)),
+                                               float(next_pt(0)), float(next_pt(1)),
+                                               tag_colors[idx]);
+
+                            }
+                        }
+                    }
+
+                    const auto tx_world_camera = app.tag_mapper.get_camera_pose(id);
+                    if (app.show_projects) {
+                        const auto camparams = app.tag_mapper.get_camparams();        
+            
+                        for (auto&& [tag, pts] : scene.tag_detections[id]) {
+                            if (!app.tag_mapper.have_tag(tag)) {
+                                continue;
+                            }
+
+                            bool is_tag_focused = true;
+                            if (app.selected_tag_idx >= 0) {
+                                is_tag_focused = (app.selected_tag_id == tag);
+                            }
+                            
+                            std::array<Eigen::VectorD<2>, 4> proj_points;
+
+                            // take the tag from the tagmapper
+                            const Eigen::MatrixD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
+                            const Eigen::MatrixD<4> tx_camera_tag = tx_world_camera.inverse() * tx_world_tag;
+                            const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
+                            for (int i = 0; i < 4; ++i) {
+                                Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];
+                                Eigen::VectorD<2> proj_point = apply_camera_matrix(camparams, camera_point);
+                                proj_points[i] = proj_point;
+                            }
+
+                            // project it
+                            float thickness = 1.0;
+                            if (is_tag_focused) {
+                                thickness = 3.0;
+                            }
+                            for (int idx =0; idx < int(proj_points.size()); ++idx) {
+                                int next_idx = (idx + 1) % proj_points.size();
+                                ImColor color = tag_colors[idx];
+                                if (!is_tag_focused) {
+                                    color.Value.w = 0.5;
+                                }
+                                const auto& pt = proj_points[idx];
+                                const auto& next_pt = proj_points[next_idx];
+                                image.add_line(float(pt(0)), float(pt(1)),
+                                               float(next_pt(0)), float(next_pt(1)),
+                                               color, thickness);
+                            }
+                        }
+                    }
+                }
+            }
+            if (selected_tab == 1) {
+                const float window_height = ImGui::GetWindowHeight();
+                auto [width, height] = app.tag_mapper.layout_size();
+                const double data_size = std::max(width, height) * 1.2;
+                const double display_size = std::min(window_height-10, window_width-50);
+                app.graph_display = ImGuiOverlayable::Rectangle(data_size, data_size, display_size);
+                app.graph_display.data_center_x = 0;
+                app.graph_display.data_center_y = 0;
+                app.tag_mapper.visit_edge_layout(display_edge, (void*)(&app));        
+                app.tag_mapper.visit_factor_layout(display_factor, (void*)(&app));
+                app.tag_mapper.visit_variable_layout(display_variable, (void*)(&app));
+            }
+            if (selected_tab == 2) {
+                const auto camparams = app.tag_mapper.get_camparams();
+                if (!app.tag_mapper.image_list().empty()) {
+                    const std::string& default_image_id = app.tag_mapper.image_list()[0];
+                    const int default_image_width = 1280;
+                    const int default_image_height = 720;
+                    auto image = ImGuiOverlayable::Rectangle(default_image_width, default_image_height, window_width-10);
+
+                    for (auto& tag : app.tag_mapper.tag_list()) {
+                        bool is_tag_focused = true;
+                        if (app.selected_tag_idx >= 0) {
+                            is_tag_focused = (app.selected_tag_id == tag);
+                        }
+                        const auto tx_world_camera = app.tag_mapper.get_camera_pose(app.tag_mapper.image_list()[0]);                    
+                            
+                        std::array<Eigen::VectorD<2>, 4> proj_points;
+
+                        Eigen::VectorD<6> dcamera_se3;
+                        dcamera_se3 <<
+                            -app.dpitch, app.dyaw, app.droll,
+                            -app.dx, app.dy, app.dz;
+                        const Eigen::MatrixD<4> dcamera = se3_exp(dcamera_se3);
+
+                        // take the tag from the tagmapper
+                        const Eigen::MatrixD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
+                        const Eigen::MatrixD<4> tx_camera_tag = dcamera*tx_world_camera.inverse() * tx_world_tag;
+                        const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
+                        for (int i = 0; i < 4; ++i) {
+                            Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];
+                            Eigen::VectorD<2> proj_point = apply_camera_matrix(camparams, camera_point);
+                            proj_points[i] = proj_point;
+                        }
+
+                        // project it
+                        float thickness = 1.0;
+                        if (is_tag_focused) {
+                            thickness = 3.0;
+                        }
+                        for (int idx =0; idx < int(proj_points.size()); ++idx) {
+                            int next_idx = (idx + 1) % proj_points.size();
+                            ImColor color = tag_colors[idx];
+                            if (!is_tag_focused) {
+                                color.Value.w = 0.5;
+                            }
+                            const auto& pt = proj_points[idx];
+                            const auto& next_pt = proj_points[next_idx];
+                            image.add_line(float(pt(0)), float(pt(1)),
+                                           float(next_pt(0)), float(next_pt(1)),
+                                           color, thickness);
+                        }
+                    }
+                } else {
+                    ImGui::Text("No data yet");
+                }
+            }
+            ImGui::EndChild();
         }
         ImGui::EndChild();
     }

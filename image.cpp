@@ -17,7 +17,18 @@ Image::Image(const std::string& path, bool make_texture) {
     load(path, make_texture);
 }
 
-void Image::load(const std::string& path, bool make_texture) {
+void Image::make_texture() {
+    assert(data);
+    sg_image_desc img_desc {};
+    img_desc.width = width;
+    img_desc.height = height;
+    img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+    img_desc.data.subimage[0][0].ptr = data;
+    img_desc.data.subimage[0][0].size = width * height * 4;
+    texture = sg_make_image(&img_desc).id;
+}
+
+void Image::load(const std::string& path, bool make_texture_flag) {
     assert(texture == 0);
     assert(data == nullptr);
     
@@ -25,14 +36,8 @@ void Image::load(const std::string& path, bool make_texture) {
     data = stbi_load(path.c_str(), &width, &height, &n, 4);
     texture = 0;
 
-    if (data && make_texture) {
-        sg_image_desc img_desc {};
-        img_desc.width = width;
-        img_desc.height = height;
-        img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-        img_desc.data.subimage[0][0].ptr = data;
-        img_desc.data.subimage[0][0].size = width * height * 4;
-        texture = sg_make_image(&img_desc).id;
+    if (make_texture_flag) {
+        make_texture();
     }
 }
 

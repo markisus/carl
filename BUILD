@@ -98,6 +98,12 @@ cc_library(
 
     ])
 
+cc_library(
+    name="thread_pool",
+    srcs=["thread_pool.cpp",
+          "thread_pool.h"],
+    hdrs=["thread_pool.h"])
+
 cc_binary(
     name="tag_mapper_gui",
     srcs=[
@@ -111,6 +117,7 @@ cc_binary(
         ":eigen_util",
         ":geometry",
         ":factor_graph",
+        ":thread_pool",
         "@usr//:opencv",
         "@com_github_nothings_stb//:stb",
         "@com_github_floooh_sokol//:sokol",
