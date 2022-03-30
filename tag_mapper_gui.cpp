@@ -49,10 +49,6 @@ struct AppState {
     bool show_projects = true;
 
     ImGuiOverlayable graph_display;
-    int COL_BY_ERROR = 0;
-    int COL_BY_CHANGE = 1;
-    int COL_BY_AGE = 2;
-    int color_style = 0;
 };
 
 std::array<Eigen::VectorD<4>, 4> make_tag_corners(double side_length) {
@@ -272,103 +268,88 @@ const uint32_t tag_colors[4] = {
 void display_variable(LayoutData* layout, VariableError* error, void* d) {
     AppState& app = *((AppState*)d);
 
-    float hue = 0;
-    float sat = 0;
-    if (app.color_style == app.COL_BY_CHANGE) {
-        hue = 0.6;
-        float change_max = app.tag_mapper.max_factor_change();
-        if (change_max < 1e-3) {
-            change_max = 1e-3;
+    const float lens[2] = { 0.2, 0.15 };
+    const float hues[2] = { 0.66, 0.0 };
+    float lits[2] = { 1.0, 1.0 };
+    float sats[2] = { 0, 0 };
+
+    for (int i = 0; i < 2; ++i) {
+        if (i == 0) {
+            float age = (float)error->age;
+            age = std::min<float>(age/4.0f, 1);
+            lits[i] = 1.0 - age;
         }
-        const float change = std::clamp<float>(error->change/change_max, 0, 1);
-        sat = change;
-    } else if (app.color_style == app.COL_BY_ERROR) {
-        float total_error = float(error->total());
-        const float error = std::sqrt(total_error);
-        const float error_max = 20;
-        const float redness = std::clamp<float>(error/error_max, 0, 1);
-        sat = redness;
-    } else if (app.color_style == app.COL_BY_AGE) {
-        float age = (float)error->age;
-        age = std::min<float>(age/4.0f, 1);
-        sat = 1.0 - age;
-        hue = 0.666;
+        if (i == 1) {
+            float total_error = float(error->total());
+            const float error = std::sqrt(total_error);
+            const float error_max = 20;
+            const float redness = std::clamp<float>(error/error_max, 0, 1);
+            sats[i] = redness;
+        }
+
+        auto picker = app.graph_display.add_circle_filled(
+            layout->position(0),
+            layout->position(1),
+            lens[i]/2,
+            ImColor::HSV(hues[i], sats[i], lits[i], 1.0f));
+
+        if (i == 0) {            
+            if (picker.contains(ImGui::GetMousePos())) {
+                ImGui::SetTooltip("%s\nError: %f\nAge: %d",
+                                  error->display_string.c_str(),
+                                  error->total(),
+                                  error->age);
+            }
+        }
     }
-
-    auto picker = app.graph_display.add_circle_filled(
-        layout->position(0),
-        layout->position(1),
-        0.1,
-        ImColor::HSV(hue, sat, 1.0f, 1.0f));
-
-    if (picker.contains(ImGui::GetMousePos())) {
-        std::string display_string = "";
-        if (app.color_style == app.COL_BY_ERROR) {
-            display_string += absl::StrFormat("Error: %f", error->total());
-        } else if (app.color_style == app.COL_BY_CHANGE) {
-            display_string += absl::StrFormat("Change: %f", error->change);
-        }  else if (app.color_style == app.COL_BY_AGE) {
-            display_string += absl::StrFormat("Age: %d", error->age);            
-        }
-        ImGui::SetTooltip(display_string.c_str());        
-    }    
 };
 
 void display_factor(LayoutData* layout, FactorError* error, void* d) {
     AppState& app = *((AppState*)d);
 
-    const double rect_len = 0.15;
+    const float lens[2] = { 0.2, 0.15 };
+    const float hues[2] = { 0.66, 0.0 };
+    float lits[2] = { 1.0, 1.0 };
+    float sats[2] = { 0, 0 };
 
-    float hue = 0;
-    float sat = 0;
-    if (app.color_style == app.COL_BY_CHANGE) {
-        hue = 0.6;
-        float change_max = app.tag_mapper.max_factor_change();
-        if (change_max < 1e-3) {
-            change_max = 1e-3;
+    for (int i = 0; i < 2; ++i) {
+        if (i == 0) {
+            float age = (float)error->age;
+            age = std::min<float>(age/4.0f, 1);
+            lits[i] = 1.0 - age;
         }
-        const float change = std::clamp<float>(error->change/change_max, 0, 1);
-        sat = change;
-    } else if (app.color_style == app.COL_BY_ERROR) {
-        float total_error = float(error->total());
-        if (total_error < 0) {
-            std::cout << "Negative error? " << total_error << "\n";
-            std::cout << "offset? " << error->offset << "\n";
-            std::cout << "delta? " << error->delta << "\n";
-            exit(-1);
+        if (i == 1) {
+            float total_error = float(error->total());
+            if (total_error < 0) {
+                std::cout << "Negative error? " << total_error << "\n";
+                std::cout << "offset? " << error->offset << "\n";
+                std::cout << "delta? " << error->delta << "\n";
+                exit(-1);
+            }
+            const float error = std::sqrt(total_error);
+            const float error_max = 20;
+            const float redness = std::clamp<float>(error/error_max, 0, 1);
+            sats[i] = redness;
         }
-        const float error = std::sqrt(total_error);
-        const float error_max = 20;
-        const float redness = std::clamp<float>(error/error_max, 0, 1);
-        sat = redness;
-    } else if (app.color_style == app.COL_BY_AGE) {
-        float age = (float)error->age;
-        age = std::min<float>(age/4.0f, 1);
-        sat = 1.0 - age;
-        hue = 0.666;
-    }
 
-    auto picker = app.graph_display.add_rect_filled(
-        layout->position(0) - rect_len/2,
-        layout->position(1) - rect_len/2,
-        layout->position(0) + rect_len/2,
-        layout->position(1) + rect_len/2,
-        ImColor::HSV(hue, sat, 1.0f, 1.0f));
 
-    if (picker.contains(ImGui::GetMousePos())) {
-        std::string display_string = error->display_string + "\n";
-        if (app.color_style == app.COL_BY_ERROR) {
-            display_string += absl::StrFormat("Error: %f", error->total());
-        } else if (app.color_style == app.COL_BY_CHANGE) {
-            display_string += absl::StrFormat("Change: %f", error->change);
-        }  else if (app.color_style == app.COL_BY_AGE) {
-            display_string += absl::StrFormat("Age: %d", error->age);            
+        auto picker = app.graph_display.add_rect_filled(
+            layout->position(0) - lens[i]/2,
+            layout->position(1) - lens[i]/2,
+            layout->position(0) + lens[i]/2,
+            layout->position(1) + lens[i]/2,
+            ImColor::HSV(hues[i], sats[i], lits[i], 1.0f));
+
+        if (i == 0) {            
+            if (picker.contains(ImGui::GetMousePos())) {
+                ImGui::SetTooltip("%s\nError: %f\nAge: %d",
+                                  error->display_string.c_str(),
+                                  error->total(),
+                                  error->age);
+            }
         }
-        ImGui::SetTooltip(display_string.c_str());        
     }
 };
-
-
 
 void display_edge(LayoutData* l_v, LayoutData* l_f, EdgeResidual* residual, void* d) {
     AppState& app = *((AppState*)d);
@@ -457,8 +438,6 @@ void frame_cb() {
             ImGui::Text("camparams: %s", eigen_to_string(camparams.transpose()).c_str());
             // ImGui::Text("last err: %f", app.last_err);
             // ImGui::Text("last err stddev: %f", sqrt(app.last_err/app.num_tags_added));
-            // ImGui::Text("last layout err: %f", app.last_layout_err);
-            // ImGui::Text("layout converged?: %d", app.layout_converged);
             
             ImGui::Text("Images (%lu / %lu)", app.images.size(), app.tag_mapper.get_scene().tag_detections.size());
             const auto& images = app.tag_mapper.image_list();
@@ -588,12 +567,9 @@ void frame_cb() {
                     
                     app.last_layout_err = app.tag_mapper.update_layout(&app.layout_converged);
 
-                    ImGui::Text("Color Style");
-                    ImGui::RadioButton("error", &app.color_style, app.COL_BY_ERROR);
+                    ImGui::Text("Layout Err: %f", app.last_layout_err);
                     ImGui::SameLine();
-                    ImGui::RadioButton("change", &app.color_style, app.COL_BY_CHANGE);
-                    ImGui::SameLine();
-                    ImGui::RadioButton("age", &app.color_style, app.COL_BY_AGE);
+                    ImGui::Text("Layout Converged: %s", app.layout_converged ? "yes" : "no");
 
                     auto [width, height] = app.tag_mapper.layout_size();
                     const double data_size = std::max(width, height) * 1.2;

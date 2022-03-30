@@ -65,6 +65,7 @@ struct TagMapperImpl {
         const auto camparam_handle = graph.add_variable(
             CAMERA_PARAMS, scene.camparams, (Eigen::id<4>() * 1e-6).eval());
         camparam_handles.insert({ camera_id,  camparam_handle});
+        graph.set_display_string(camparam_handle, absl::StrFormat("camparams:%s", camera_id));
     };
 
     bool have_tag(int tag_id) {
@@ -82,6 +83,8 @@ struct TagMapperImpl {
             TAG_POSE,
             se3_world_tag, cov);
         tag_pose_handles.insert({ tag_id, tag_pose_handle });
+
+        graph.set_display_string(tag_pose_handle, absl::StrFormat("tag:%d", tag_id));
     };
 
     bool have_image(const std::string& image_id) {
@@ -104,6 +107,8 @@ struct TagMapperImpl {
             CAMERA_POSE,
             se3_world_camera, cov);
         camera_pose_handles.insert({ image_id, camera_pose_handle });
+
+        graph.set_display_string(camera_pose_handle, absl::StrFormat("img:%s", image_id));
 
         _image_list.push_back(image_id);
     };

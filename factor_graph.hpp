@@ -513,8 +513,14 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return eigen_vector_map(raw, factor_dim);
     };
 
-    void set_display_string(entt::entity factor, const std::string& display_string) {
+    template <int dim>
+    void set_display_string(FactorHandle<dim> factor, const std::string& display_string) {
         factors.get<FactorError>(factor).display_string = display_string;
+    }
+
+    template <int dim>
+    void set_display_string(VariableHandle<dim> variable, const std::string& display_string) {
+        variables.get<VariableError>(variable).display_string = display_string;
     }
 
     template <typename TFactorData>

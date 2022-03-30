@@ -33,7 +33,8 @@ struct VariableError {
         return factor_error + prior_error;
     }
 
-    int age = MAX_AGE;    
+    int age = MAX_AGE;
+    std::string display_string;    
 };
 
 struct EdgeResidual {
