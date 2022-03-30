@@ -529,12 +529,12 @@ void frame_cb() {
                 if (ImGui::BeginTabItem("3D View")) {
                     selected_tab = 2;
 
-                    ImGui::SliderFloat("dx", &app.dx, -0.5, 0.5 );
-                    ImGui::SliderFloat("dy",  &app.dy, -0.5, 0.5);
-                    ImGui::SliderFloat("dz", &app.dz, -0.5, 0.5);
-                    ImGui::SliderFloat("droll",  &app.droll, -0.5, 0.5);
-                    ImGui::SliderFloat("dpitch",  &app.dpitch, -0.5, 0.5);
-                    ImGui::SliderFloat("dyaw",  &app.dyaw, -0.5, 0.5);
+                    ImGui::SliderFloat("dx", &app.dx, -5, 5 );
+                    ImGui::SliderFloat("dy",  &app.dy, -5, 5);
+                    ImGui::SliderFloat("dz", &app.dz, -5, 5);
+                    ImGui::SliderFloat("droll",  &app.droll, -1.0, 1.0);
+                    ImGui::SliderFloat("dpitch",  &app.dpitch, -1.0, 1.0);
+                    ImGui::SliderFloat("dyaw",  &app.dyaw, -1.0, 1.0);
                     ImGui::EndTabItem();
                 }
                 ImGui::EndTabBar();
@@ -668,7 +668,7 @@ void frame_cb() {
                             // project it
                             float thickness = 1.0;
                             if (is_tag_focused) {
-                                thickness = 3.0;
+                                thickness = 2.0;
                             }
                             for (int idx =0; idx < int(proj_points.size()); ++idx) {
                                 int next_idx = (idx + 1) % proj_points.size();
@@ -706,24 +706,40 @@ void frame_cb() {
                     const int default_image_height = 720;
                     auto image = ImGuiOverlayable::Rectangle(default_image_width, default_image_height, window_width-10);
 
+                    Eigen::MatrixD<4> tags_center = Eigen::id<4>();
+                    if (!app.tag_mapper.tag_list().empty()) {
+                        tags_center = app.tag_mapper.get_tag_pose(app.tag_mapper.tag_list()[0]);
+                    }
+
                     for (auto& tag : app.tag_mapper.tag_list()) {
                         bool is_tag_focused = true;
                         if (app.selected_tag_idx >= 0) {
                             is_tag_focused = (app.selected_tag_id == tag);
                         }
-                        const auto tx_world_camera = app.tag_mapper.get_camera_pose(app.tag_mapper.image_list()[0]);                    
-                            
+
+                        Eigen::MatrixD<4> tx_tc_camera = Eigen::id<4>();
+                        tx_tc_camera(2,3) = 0.5;
+                        tx_tc_camera.col(2) *= -1;
+                        tx_tc_camera.col(1) *= -1;
+                           
                         std::array<Eigen::VectorD<2>, 4> proj_points;
 
+                        Eigen::VectorD<6> dobject_se3;
+                        dobject_se3 << -app.dpitch, app.dyaw, app.droll, 0, 0, 0;
+                        dobject_se3.head<3>() *= M_PI;
+
                         Eigen::VectorD<6> dcamera_se3;
-                        dcamera_se3 <<
-                            -app.dpitch, app.dyaw, app.droll,
-                            -app.dx, app.dy, app.dz;
+                        dcamera_se3 << 0, 0, 0, -app.dx, app.dy, app.dz;
+                        const Eigen::MatrixD<4> dobject = se3_exp(dobject_se3);
                         const Eigen::MatrixD<4> dcamera = se3_exp(dcamera_se3);
 
                         // take the tag from the tagmapper
-                        const Eigen::MatrixD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
-                        const Eigen::MatrixD<4> tx_camera_tag = dcamera*tx_world_camera.inverse() * tx_world_tag;
+                        const Eigen::MatrixD<4> tx_tc_tag = tags_center.inverse() * app.tag_mapper.get_tag_pose(tag);
+
+                        // std::cout << "tag " << tag << "============== \n";
+                        // std::cout << tx_world_tag << "\n";
+
+                        const Eigen::MatrixD<4> tx_camera_tag = dcamera * tx_tc_camera.inverse() * dobject * tx_tc_tag;
                         const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
                         for (int i = 0; i < 4; ++i) {
                             Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];
@@ -734,7 +750,7 @@ void frame_cb() {
                         // project it
                         float thickness = 1.0;
                         if (is_tag_focused) {
-                            thickness = 3.0;
+                            thickness = 2.0;
                         }
                         for (int idx =0; idx < int(proj_points.size()); ++idx) {
                             int next_idx = (idx + 1) % proj_points.size();
