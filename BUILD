@@ -119,22 +119,3 @@ cc_binary(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings",
     ])
-
-cc_binary(
-    name="simulation_a",
-    srcs=[
-        "simulation_a.cpp",
-    ],
-    deps=[
-        ":eigen_util",
-        ":geometry",
-        ":factor_graph",
-        "@com_gitlab_libeigen_eigen//:eigen",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings",
-    ])
-    
-
-py_binary(
-    name="transpiler",
-    srcs=["transpiler.py"])
