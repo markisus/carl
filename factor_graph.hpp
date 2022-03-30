@@ -99,40 +99,10 @@ double get_heuristic_residual(const Tqd& msg_qd, const T& msg) {
     const double diff = (mean - mean_qd).template lpNorm<Eigen::Infinity>();
 
     if ((!mean.allFinite()) || (!mean_qd.allFinite())) {
-        // std::cout << "got nonfinite mean in get_heuristic_residual" << "\n";
-        // std::cout << "mean" << "\n";
-        // std::cout << mean.transpose() << "\n";
-        // std::cout << "mean_qd" << "\n";
-        // std::cout << mean_qd.transpose() << "\n";
-        // std::cout << "info vec" << "\n";
-        // std::cout << msg.vector.transpose() << "\n";
-        // std::cout << "info vec qd" << "\n";
-        // std::cout << msg_qd.vector.transpose() << "\n";
-        // std::cout << "info mat" << "\n";
-        // std::cout << msg.matrix << "\n";
-        // std::cout << "info mat qd" << "\n";
-        // std::cout << msg_qd.matrix << "\n";
-        // exit(-1);
         return 1000;
     }
 
     const double result = diff/(scale + 1e-6);
-    if (!std::isfinite(result)) {
-        std::cout << "returning nonfinite result to get_heuristic_residual" << "\n";
-        std::cout << "mean" << "\n";
-        std::cout << mean.transpose() << "\n";
-        std::cout << "mean_qd" << "\n";
-        std::cout << mean_qd.transpose() << "\n";
-        std::cout << "info vec" << "\n";
-        std::cout << msg.vector.transpose() << "\n";
-        std::cout << "info vec qd" << "\n";
-        std::cout << msg_qd.vector.transpose() << "\n";
-        std::cout << "info mat" << "\n";
-        std::cout << msg.matrix << "\n";
-        std::cout << "info mat qd" << "\n";
-        std::cout << msg_qd.matrix << "\n";
-    }
-    
     return result;
 }
 
@@ -244,7 +214,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
     double max_factor_change = 0;
 
-    double regularizer = 1.0;
     double total_error = 0;
 
     bool layout_converged = false;
@@ -606,12 +575,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                  edges.template view<Flag,
                  ToFactorMessageQueued<variable_dim>, ToFactorMessage<variable_dim>, EdgeResidual>().each()) {
             residual.to_factor = get_heuristic_residual(to_factor_message_qd, to_factor_message);
-            const auto variable = edges.get<VariableConnection>(edge).variable;
-            const auto factor = edges.get<FactorConnection>(edge).factor;
-            // std::cout << "\tResidualizing edge " << entt::to_entity(edge) << " from var " <<
-            //     entt::to_entity(variable) << " to factor " <<
-            //     entt::to_entity(factor) << "\n";
-            // std::cout << "set residual to " << residual.to_factor << "\n";
         }
     }
 
@@ -722,7 +685,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
     template <int dim, typename Flag=EnableFlag>
     void queue_to_variable_messages_impl() {
         // only touches edges
-        // std::cout << "Updating variables of dim " << int(dim) << "\n";
 
         for (auto [_, factor_connection, to_variable_message_qd, to_factor_message] : edges.template view<
                  EnableFlag,
@@ -770,18 +732,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                  EnableFlag,
                  FactorConnection, ToVariableMessageQueued<dim>, ToVariableMessage<dim>, EdgeResidual>().each()) {
             residual.to_variable = get_heuristic_residual(to_variable_message_qd, to_variable_message);
-            if (!std::isfinite(residual.to_variable)) {
-                std::cout << "got nonfinite to variable residual" << "\n";
-                std::cout << "to variable message" << "\n";
-                std::cout << to_variable_message.vector.transpose() << "\n";
-                std::cout << to_variable_message.matrix << "\n";
-                std::cout << "mean" << "\n";
-                std::cout << (to_variable_message.matrix.llt().solve(to_variable_message.vector)).transpose() << "\n";
-                std::cout << "to variable message qd" << "\n";
-                std::cout << to_variable_message_qd.vector.transpose() << "\n";
-                std::cout << to_variable_message_qd.matrix << "\n";
-                exit(-1);
-            }
         }
     }
 
@@ -826,9 +776,8 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                  InfoVectorDelta<dim>, InfoMatrixDelta<dim>,
                  InfoVectorPrior<dim>, InfoMatrixPrior<dim>>().each()) {
 
-            // std::cout << entt::to_entity(_) << " original mean " << mean.transpose() << "\n";
-            info_vector = info_vector_delta + info_vector_prior*regularizer;
-            info_matrix = info_matrix_delta + info_matrix_prior*regularizer;
+            info_vector = info_vector_delta + info_vector_prior;
+            info_matrix = info_matrix_delta + info_matrix_prior;
 
             auto llt = info_matrix.llt();
             mean = llt.solve(info_vector);
@@ -886,7 +835,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         int num_var_edges = 0;
         for (auto [edge, residual] : edges.template view<EdgeResidual>().each()) {
             edges.emplace<EnableFlag>(edge);
-            // const auto factor = edges.get<FactorConnection>(edge).factor;
             const auto variable = edges.get<VariableConnection>(edge).variable;
             variables.template emplace_or_replace<EnableFlag>(variable);
             num_var_edges += 1;
@@ -902,11 +850,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [edge, vconn] : edges.template view<VariableConnection>().each()) {
             const auto variable = vconn.variable;
             if (variables.any_of<EnableFlag>(variable)) {
-                // const auto variable = edges.get<VariableConnection>(edge).variable;
-                // const auto factor = edges.get<FactorConnection>(edge).factor;
-                // std::cout << "\tEnabling edge from var " <<
-                //     entt::to_entity(variable) << " to factor " <<
-                //     entt::to_entity(factor) << "\n";
                 edges.template emplace_or_replace<EnableFlag>(edge);
             }
         }
@@ -949,11 +892,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [edge, fconn] : edges.template view<FactorConnection>().each()) {
             const auto factor = fconn.factor;
             if (factors.any_of<EnableFlag>(factor)) {
-                // const auto variable = edges.get<VariableConnection>(edge).variable;
-                // const auto factor = edges.get<FactorConnection>(edge).factor;
-                // std::cout << "\tEnabling edge from var " <<
-                //     entt::to_entity(variable) << " to factor " <<
-                // entt::to_entity(factor) << "\n";
                 edges.template emplace_or_replace<EnableFlag>(edge);
             }
         }
@@ -964,22 +902,10 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
     void update_factors_finish_impl_3() {
         // update total error
-        double prev_error = total_error;
         total_error = 0;
         for (auto [_, factor_error] : factors.template view<FactorError>().each()) {
             total_error += factor_error.total();
         }
-
-        // std::cout << "error changed from " << prev_error << "=> " <<total_error << "\n";
-        // const double max_regularizer = 1e6;
-        // const double min_regularizer = 1e-3;
-        // if (total_error < prev_error) {
-        //     regularizer *= 0.5;
-        // } else {
-        //     regularizer *= 3;
-        // }
-        // regularizer = std::clamp(regularizer, min_regularizer, max_regularizer);
-        // std::cout << "regularizer is now " << regularizer << "\n";        
 
         for (auto [_, factor_error] : factors.template view<FactorError>().each()) {
             max_factor_change = std::max(factor_error.change, max_factor_change);
