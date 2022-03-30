@@ -28,7 +28,6 @@
 #include "layout_data.h"
 #include "image.h"
 
-
 using namespace carl;
 using namespace tag_mapper;
 
