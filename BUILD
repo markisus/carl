@@ -99,9 +99,9 @@ cc_library(
     ])
 
 cc_binary(
-    name="simulation_b",
+    name="tag_mapper_gui",
     srcs=[
-        "simulation_b.cpp",
+        "tag_mapper_gui.cpp",
         "imgui_overlayable.h"
     ],
     deps=[
