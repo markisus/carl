@@ -68,48 +68,69 @@ struct ImGuiOverlayable {
         return result;
     };
 
+    void begin() {
+        ImGui::GetWindowDrawList()->PushClipRect(
+            ImVec2{corner_x, corner_y}, ImVec2{corner_x + display_width, corner_y + display_height}, true);
+    }
+
+    void end() {
+        ImGui::GetWindowDrawList()->PopClipRect();
+    }
+
     void to_window_coords(float* x, float* y) {
         *x = scale * (*x - data_center_x) + corner_x + display_width/2;
         *y = scale * (*y - data_center_y) + corner_y + display_height/2;
     }
 
     CirclePicker add_circle(float x, float y, float r, uint32_t color = ImColor(0.0f, 0.0f, 0.0f, 1.0f), float thickness = 1.0) {
+        begin();
         to_window_coords(&x, &y);
         r *= scale;
         ImGui::GetWindowDrawList()->AddCircle(ImVec2{x,y}, r, color, /*num_segments=*/16, thickness);
+        end();
         return CirclePicker { ImVec2{x,y}, r };
     }
 
     CirclePicker add_circle_filled(float x, float y, float r, uint32_t color = ImColor(0.0f, 0.0f, 0.0f, 1.0f)) {
+        begin();
         to_window_coords(&x, &y);
         r *= scale;
         ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2{x,y}, r, color, /*num_segments=*/16);
+        end();
         return CirclePicker { ImVec2{x,y}, r };
     }
     
 
     void add_line(float x0, float y0, float x1, float y1, uint32_t color, float thickness = 1.0) {
+        begin();
         to_window_coords(&x0, &y0);
         to_window_coords(&x1, &y1);
         ImGui::GetWindowDrawList()->AddLine(ImVec2{x0, y0}, ImVec2{x1, y1}, color, thickness);
+        end();
     }
 
     RectPicker add_rect(float x0, float y0, float x1, float y1, uint32_t color, float thickness = 1.0) {
+        begin();
         to_window_coords(&x0, &y0);
         to_window_coords(&x1, &y1);
         ImGui::GetWindowDrawList()->AddRect(ImVec2{x0, y0}, ImVec2{x1, y1}, color, 0, 0, thickness);
+        end();
         return RectPicker { ImVec2 {x0,y0}, ImVec2{x1,y1} };
     }
 
     RectPicker add_rect_filled(float x0, float y0, float x1, float y1, uint32_t color) {
+        begin();
         to_window_coords(&x0, &y0);
         to_window_coords(&x1, &y1);
         ImGui::GetWindowDrawList()->AddRectFilled(ImVec2{x0, y0}, ImVec2{x1, y1}, color, 0, 0);
+        end();
         return RectPicker { ImVec2 {x0,y0}, ImVec2{x1,y1} };
     }
 
     void add_text(float x, float y, uint32_t color, const char* text) {
+        begin();
         to_window_coords(&x,&y);
         ImGui::GetWindowDrawList()->AddText(ImVec2{x,y},color,text);
+        end();
     }
 };
