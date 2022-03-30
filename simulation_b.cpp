@@ -73,7 +73,7 @@ std::string eigen_to_string(T&& m) {
     return ss.str();
 }
 
-Eigen::SquareD<4> initial_guess_tx_camera_tag(double tag_side_length,
+Eigen::MatrixD<4> initial_guess_tx_camera_tag(double tag_side_length,
                                               const Eigen::VectorD<4>& camparams,
                                               const std::array<Eigen::VectorD<2>, 4>& image_points) {
     const double fx = camparams(0);
@@ -81,7 +81,7 @@ Eigen::SquareD<4> initial_guess_tx_camera_tag(double tag_side_length,
     const double cx = camparams(2);
     const double cy = camparams(3);
 
-    Eigen::SquareD<3> camera_matrix;
+    Eigen::MatrixD<3> camera_matrix;
     camera_matrix <<
         fx, 0, cx,
         0, fy, cy,
@@ -119,13 +119,13 @@ Eigen::SquareD<4> initial_guess_tx_camera_tag(double tag_side_length,
     cv::Mat rmat;
     cv::Rodrigues(rvec,rmat);
 
-    Eigen::SquareD<3> eigen_rmat;
+    Eigen::MatrixD<3> eigen_rmat;
     cv::cv2eigen(rmat, eigen_rmat);
 
     Eigen::VectorD<3> eigen_tvec;
     cv::cv2eigen(tvec, eigen_tvec);
 
-    Eigen::SquareD<4> tx_camera_tag;
+    Eigen::MatrixD<4> tx_camera_tag;
     tx_camera_tag.block<3,3>(0,0) = eigen_rmat;
     tx_camera_tag.block<3,1>(0,3) = eigen_tvec;
     tx_camera_tag.row(3) << 0, 0, 0, 1;
@@ -189,7 +189,7 @@ void add_tag_mapper_image(AppState* app) {
         // get mean, get covar for all tags that we
         for (auto& [tag_id, _] : scene.tag_detections[image_id]) {
             if (tag_mapper.have_tag(tag_id)) {
-                Eigen::SquareD<6> covariance;
+                Eigen::MatrixD<6> covariance;
                 tag_mapper.get_tag_pose(tag_id, &covariance);
                 if (covariance.trace() < min_covar_trace) {
                     min_covar_trace = covariance.trace();
@@ -560,8 +560,8 @@ void frame_cb() {
                                 std::array<Eigen::VectorD<2>, 4> proj_points;
 
                                 // take the tag from the tagmapper
-                                const Eigen::SquareD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
-                                const Eigen::SquareD<4> tx_camera_tag = tx_world_camera.inverse() * tx_world_tag;
+                                const Eigen::MatrixD<4> tx_world_tag = app.tag_mapper.get_tag_pose(tag);
+                                const Eigen::MatrixD<4> tx_camera_tag = tx_world_camera.inverse() * tx_world_tag;
                                 const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
                                 for (int i = 0; i < 4; ++i) {
                                     Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];

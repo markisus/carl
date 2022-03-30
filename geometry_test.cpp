@@ -167,7 +167,7 @@ TEST(SE3_left_jacobian_inv, inverse_of_SE3_left_jacobian) {
 TEST(SE3_left_jacobian_inv, numerical_check) {
     const double eps = 1e-3;
     Eigen::VectorD<6> base = Eigen::random_vec<6>();
-    Eigen::SquareD<6> result;
+    Eigen::MatrixD<6> result;
     for (int i = 0; i < 6; ++i) {
         Eigen::VectorD<6> perturb = Eigen::basis<6>(i);
 
@@ -175,8 +175,8 @@ TEST(SE3_left_jacobian_inv, numerical_check) {
         //     t*d  = log(exp(b + jli(b) t*d) exp(-b))
         //       d  = log(exp(b + jli(b) t*d) exp(-b)) / t
 
-        const Eigen::SquareD<6> jlinv = SE3_left_jacobian_inv(base);
-        const Eigen::SquareD<4> deriv = (se3_exp(base + jlinv * eps * perturb) * se3_exp(-base)).log()/eps;
+        const Eigen::MatrixD<6> jlinv = SE3_left_jacobian_inv(base);
+        const Eigen::MatrixD<4> deriv = (se3_exp(base + jlinv * eps * perturb) * se3_exp(-base)).log()/eps;
         const Eigen::VectorD<6> deriv_vec = se3_mat_to_vec(deriv);
         result.col(i) = deriv_vec;
     }
@@ -190,7 +190,7 @@ TEST(SE3_left_jacobian_inv, numerical_check_low_angle) {
     base.head<3>().normalize();
     base.head<3>() *= 1e-7;
 
-    Eigen::SquareD<6> result;
+    Eigen::MatrixD<6> result;
     for (int i = 0; i < 6; ++i) {
         Eigen::VectorD<6> perturb = Eigen::basis<6>(i);
 
@@ -198,8 +198,8 @@ TEST(SE3_left_jacobian_inv, numerical_check_low_angle) {
         //     t*d  = log(exp(b + jli(b) t*d) exp(-b))
         //       d  = log(exp(b + jli(b) t*d) exp(-b)) / t
 
-        const Eigen::SquareD<6> jlinv = SE3_left_jacobian_inv(base);
-        const Eigen::SquareD<4> deriv = (se3_exp(base + jlinv * eps * perturb) * se3_exp(-base)).log()/eps;
+        const Eigen::MatrixD<6> jlinv = SE3_left_jacobian_inv(base);
+        const Eigen::MatrixD<4> deriv = (se3_exp(base + jlinv * eps * perturb) * se3_exp(-base)).log()/eps;
         const Eigen::VectorD<6> deriv_vec = se3_mat_to_vec(deriv);
         result.col(i) = deriv_vec;
     }
@@ -303,7 +303,7 @@ TEST(camera_project_factor, check_JtJ_rtJ) {
     const double perturbed_error2 = (projected_image_point_perturbed - image_point).squaredNorm();
 
     // now compare this estimate to the one given by the factor
-    Eigen::SquareD<16> JtJ;
+    Eigen::MatrixD<16> JtJ;
     Eigen::VectorD<16> rtJ;
     double error2 = camera_project_factor(
         camparams,
@@ -312,7 +312,7 @@ TEST(camera_project_factor, check_JtJ_rtJ) {
         body_points,
         image_points,
         &JtJ, &rtJ);
-    Eigen::SquareD<1> temp = (perturb.transpose()*JtJ*perturb - 2*rtJ.transpose()*perturb);
+    Eigen::MatrixD<1> temp = (perturb.transpose()*JtJ*perturb - 2*rtJ.transpose()*perturb);
     const double perturbed_error2_from_factor = temp(0,0) + error2;
 
     EXPECT_LT(std::abs(perturbed_error2_from_factor - perturbed_error2), 1e-6);
@@ -326,11 +326,11 @@ TEST(camera_project_factor, check_JtJ_rtJ_sum) {
 
     std::array<Eigen::VectorD<4>, 2> body_points_arr { Eigen::random_homog(), Eigen::random_homog() }; 
     std::array<Eigen::VectorD<2>, 2> image_points_arr { Eigen::random_vec<2>(), Eigen::random_vec<2>() }; 
-    Eigen::SquareD<16> sum_JtJs = Eigen::zero_mat<16>();
+    Eigen::MatrixD<16> sum_JtJs = Eigen::zero_mat<16>();
     Eigen::VectorD<16> sum_rtJs = Eigen::zero_vec<16>();
     double sum_error2s = 0;
     for (int i = 0; i < 2; ++i) {
-        Eigen::SquareD<16> JtJ;
+        Eigen::MatrixD<16> JtJ;
         Eigen::VectorD<16> rtJ;
         std::vector<Eigen::VectorD<4>> body_points;
         body_points.push_back(body_points_arr[i]);
@@ -348,7 +348,7 @@ TEST(camera_project_factor, check_JtJ_rtJ_sum) {
         sum_error2s += error2;
     }
 
-    Eigen::SquareD<16> sum_JtJs_alt = Eigen::zero_mat<16>();
+    Eigen::MatrixD<16> sum_JtJs_alt = Eigen::zero_mat<16>();
     Eigen::VectorD<16> sum_rtJs_alt = Eigen::zero_vec<16>();
     std::vector<Eigen::VectorD<4>> body_points {body_points_arr[0], body_points_arr[1]};
     std::vector<Eigen::VectorD<2>> image_points {image_points_arr[0], image_points_arr[1]};

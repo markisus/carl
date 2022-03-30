@@ -71,11 +71,11 @@ struct TagMapperImpl {
         return tag_pose_handles.count(tag_id);
     };
 
-    void init_tag(int tag_id, const Eigen::SquareD<4>& tx_world_tag) {
+    void init_tag(int tag_id, const Eigen::MatrixD<4>& tx_world_tag) {
         assert(!have_tag(tag_id));
 
         auto se3_world_tag = SE3_log(tx_world_tag);
-        Eigen::SquareD<6> cov = Eigen::id<6>();
+        Eigen::MatrixD<6> cov = Eigen::id<6>();
         cov.block<3,3>(0,0) *= 0.5;
         cov *= 0.005;
         const auto tag_pose_handle = graph.add_variable(
@@ -88,10 +88,10 @@ struct TagMapperImpl {
         return camera_pose_handles.count(image_id);
     };
 
-    void init_image(const std::string& image_id, const Eigen::SquareD<4>& tx_world_camera) {
+    void init_image(const std::string& image_id, const Eigen::MatrixD<4>& tx_world_camera) {
         assert(!have_image(image_id));
         auto se3_world_camera = SE3_log(tx_world_camera);
-        Eigen::SquareD<6> cov = Eigen::id<6>();
+        Eigen::MatrixD<6> cov = Eigen::id<6>();
         cov.block<3,3>(0,0) *= 0.5;
         cov *= 0.005;
 
@@ -112,21 +112,21 @@ struct TagMapperImpl {
         return _image_list;
     }
 
-    Eigen::SquareD<4> get_camera_pose(const std::string& image_id, Eigen::SquareD<6>* covariance = nullptr) {
+    Eigen::MatrixD<4> get_camera_pose(const std::string& image_id, Eigen::MatrixD<6>* covariance = nullptr) {
         if (covariance) {
             *covariance = graph.get_covariance(camera_pose_handles[image_id]);
         }
         return se3_exp(graph.get_mean(camera_pose_handles[image_id]));
     }
 
-    Eigen::SquareD<4> get_tag_pose(int tag_id, Eigen::SquareD<6>* covariance = nullptr) {
+    Eigen::MatrixD<4> get_tag_pose(int tag_id, Eigen::MatrixD<6>* covariance = nullptr) {
         if (covariance) {
             *covariance = graph.get_covariance(tag_pose_handles[tag_id]);
         }
         return se3_exp(graph.get_mean(tag_pose_handles[tag_id]));
     }
 
-    Eigen::VectorD<4> get_camparams(Eigen::SquareD<4>* covariance = nullptr) {
+    Eigen::VectorD<4> get_camparams(Eigen::MatrixD<4>* covariance = nullptr) {
         if (covariance) {
             *covariance = graph.get_covariance(camparam_handles["default_camera_id"]);
         }
@@ -210,7 +210,7 @@ struct TagMapperImpl {
         graph.add_edge(tag_pose_variable, factor, 10);
 
         Eigen::VectorD<16>& lin_point = graph.factors.get<LinearizationPoint<16>>(factor);
-        Eigen::SquareD<16>& jtj = graph.factors.get<InfoMatrix<16>>(factor);
+        Eigen::MatrixD<16>& jtj = graph.factors.get<InfoMatrix<16>>(factor);
         Eigen::VectorD<16>& rtj = graph.factors.get<InfoVector<16>>(factor);
         double rtr = camera_project_factor(lin_point, data.tag_points, data.image_points, &jtj, &rtj);
         graph.factors.get<FactorError>(factor).offset = rtr;
@@ -254,15 +254,15 @@ void TagMapper::add_detection(const std::string& image_id,
     impl_->add_detection(image_id, tag_id);
 };
 
-Eigen::SquareD<4> TagMapper::get_camera_pose(const std::string& image_id, Eigen::SquareD<6>* cov) {
+Eigen::MatrixD<4> TagMapper::get_camera_pose(const std::string& image_id, Eigen::MatrixD<6>* cov) {
     return impl_->get_camera_pose(image_id, cov);
 };
 
-Eigen::SquareD<4> TagMapper::get_tag_pose(int tag_id, Eigen::SquareD<6>* cov) {
+Eigen::MatrixD<4> TagMapper::get_tag_pose(int tag_id, Eigen::MatrixD<6>* cov) {
     return impl_->get_tag_pose(tag_id, cov);
 };
 
-Eigen::VectorD<4> TagMapper::get_camparams(Eigen::SquareD<4>* cov) {
+Eigen::VectorD<4> TagMapper::get_camparams(Eigen::MatrixD<4>* cov) {
     return impl_->get_camparams(cov);
 };
 
@@ -274,7 +274,7 @@ Scene& TagMapper::get_scene() {
     return impl_->get_scene();
 };
 
-void TagMapper::init_tag(int tag_id, const Eigen::SquareD<4>& tx_world_tag) {
+void TagMapper::init_tag(int tag_id, const Eigen::MatrixD<4>& tx_world_tag) {
     return impl_->init_tag(tag_id, tx_world_tag);
 };
 
@@ -286,7 +286,7 @@ double TagMapper::update_layout(bool* converged) {
     return impl_->update_layout(converged);
 };
 
-void TagMapper::init_image(const std::string& image_id, const Eigen::SquareD<4>& tx_world_camera) {
+void TagMapper::init_image(const std::string& image_id, const Eigen::MatrixD<4>& tx_world_camera) {
     return impl_->init_image(image_id, tx_world_camera);
 };
 

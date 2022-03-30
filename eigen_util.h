@@ -4,23 +4,19 @@
 namespace Eigen {
 
 template <int dim>
-using SquareD = Matrix<double, dim, dim>;
-
-
-template <int dim>
 using VectorD = Matrix<double, dim, 1>;
 
-template <int rows, int cols>
+template <int rows, int cols=rows>
 using MatrixD = Matrix<double, rows, cols>;
 
 template <int dim>
 auto id() {
-    return SquareD<dim>::Identity();
+    return MatrixD<dim>::Identity();
 }
 
 template <int dim>
-SquareD<dim> zero_mat() {
-    return SquareD<dim>::Zero();
+MatrixD<dim> zero_mat() {
+    return MatrixD<dim>::Zero();
 }
 
 template <int rows, int cols>

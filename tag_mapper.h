@@ -29,10 +29,10 @@ struct TagMapper {
     Scene& get_scene();
 
     bool have_tag(int tag_id);
-    void init_tag(int tag_id, const Eigen::SquareD<4>& tx_world_tag);
+    void init_tag(int tag_id, const Eigen::MatrixD<4>& tx_world_tag);
 
     bool have_image(const std::string& image_id);
-    void init_image(const std::string& image_id, const Eigen::SquareD<4>& tx_world_camera);
+    void init_image(const std::string& image_id, const Eigen::MatrixD<4>& tx_world_camera);
     
     double update();
     double relinearize();
@@ -44,9 +44,9 @@ struct TagMapper {
     void visit_factor_layout(void(*visiter)(LayoutData*, FactorError*, void*), void* user_data);
     void visit_edge_layout(void(*visiter)(LayoutData*, LayoutData*, EdgeResidual*, void*), void* user_data);
 
-    Eigen::SquareD<4> get_camera_pose(const std::string& image_id, Eigen::SquareD<6>* covariance = nullptr);
-    Eigen::SquareD<4> get_tag_pose(int tag_id, Eigen::SquareD<6>* covariance = nullptr);
-    Eigen::VectorD<4> get_camparams(Eigen::SquareD<4>* covariance = nullptr);
+    Eigen::MatrixD<4> get_camera_pose(const std::string& image_id, Eigen::MatrixD<6>* covariance = nullptr);
+    Eigen::MatrixD<4> get_tag_pose(int tag_id, Eigen::MatrixD<6>* covariance = nullptr);
+    Eigen::VectorD<4> get_camparams(Eigen::MatrixD<4>* covariance = nullptr);
 
     std::array<double, 2> layout_size();
     double max_factor_change();

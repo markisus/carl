@@ -68,25 +68,25 @@ using PriorMean = TaggedMatrix<dim, 1, MatrixTag::COVARIANCE_FORM_PRIOR_VEC>;
 
 template <int dim>
 struct ToVariableMessage {
-    Eigen::SquareD<dim> matrix = Eigen::zero_mat<dim>();
+    Eigen::MatrixD<dim> matrix = Eigen::zero_mat<dim>();
     Eigen::VectorD<dim> vector = Eigen::zero_vec<dim>();
 };
 
 template <int dim>
 struct ToFactorMessage {
-    Eigen::SquareD<dim> matrix = Eigen::zero_mat<dim>();
+    Eigen::MatrixD<dim> matrix = Eigen::zero_mat<dim>();
     Eigen::VectorD<dim> vector = Eigen::zero_vec<dim>();
 };
 
 template <int dim>
 struct ToVariableMessageQueued {
-    Eigen::SquareD<dim> matrix = Eigen::zero_mat<dim>();
+    Eigen::MatrixD<dim> matrix = Eigen::zero_mat<dim>();
     Eigen::VectorD<dim> vector = Eigen::zero_vec<dim>();
 };
 
 template <int dim>
 struct ToFactorMessageQueued {
-    Eigen::SquareD<dim> matrix = Eigen::zero_mat<dim>();
+    Eigen::MatrixD<dim> matrix = Eigen::zero_mat<dim>();
     Eigen::VectorD<dim> vector = Eigen::zero_vec<dim>();
 };
 
@@ -673,7 +673,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                  InfoMatrix<dim>, InfoMatrixDelta<dim>, FactorError>().each()) {
 
             info_vector_delta_recentered = info_vector_delta - info_matrix_delta * linearization_point;
-            const Eigen::SquareD<dim> total_info_matrix = info_matrix + info_matrix_delta;
+            const Eigen::MatrixD<dim> total_info_matrix = info_matrix + info_matrix_delta;
             const Eigen::VectorD<dim> total_info_vector = info_vector + info_vector_delta_recentered;
 
             Eigen::VectorD<dim> previous_mean = mean;
@@ -747,7 +747,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
             // add in the linearization point of the factor
 
             // pull out the data that was sent to the factor
-            const Eigen::SquareD<dim> info_mat_perturb = -to_factor_message.matrix;
+            const Eigen::MatrixD<dim> info_mat_perturb = -to_factor_message.matrix;
             const Eigen::VectorD<dim> info_vec_perturb = -to_factor_message.vector;
 
             const Eigen::Matrix<double, dim, dim> fixer = info_marginalization_fixer(to_variable_message_qd.matrix, info_mat_perturb);
@@ -760,7 +760,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
             // convert the message from covariance to info form
             auto llt = to_variable_message_qd.matrix.llt();
             const Eigen::VectorD<dim> info_vector = llt.solve(to_variable_message_qd.vector);
-            const Eigen::SquareD<dim> info_matrix = llt.solve(Eigen::id<dim>());
+            const Eigen::MatrixD<dim> info_matrix = llt.solve(Eigen::id<dim>());
             to_variable_message_qd.matrix = info_matrix;
             to_variable_message_qd.vector = info_vector;
         }
@@ -949,8 +949,8 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [edge, fconn] : edges.template view<FactorConnection>().each()) {
             const auto factor = fconn.factor;
             if (factors.any_of<EnableFlag>(factor)) {
-                const auto variable = edges.get<VariableConnection>(edge).variable;
-                const auto factor = edges.get<FactorConnection>(edge).factor;
+                // const auto variable = edges.get<VariableConnection>(edge).variable;
+                // const auto factor = edges.get<FactorConnection>(edge).factor;
                 // std::cout << "\tEnabling edge from var " <<
                 //     entt::to_entity(variable) << " to factor " <<
                 // entt::to_entity(factor) << "\n";
