@@ -77,6 +77,21 @@ std::array<Eigen::VectorD<4>, 4> make_tag_corners(double side_length) {
     return { tl, tr, br, bl };
 }
 
+Eigen::MatrixD<4> get_four_camera_rays(
+    const double w, const double h,
+    const Eigen::VectorD<4>& camparams) {
+    const double fx = camparams(0);
+    const double fy = camparams(1);
+    const double cx = camparams(2);
+    const double cy = camparams(3);
+    Eigen::MatrixD<4> rays;
+    rays.col(0) << -cx/fx, -cy/fy, 1, 1;
+    rays.col(1) << (w-cx)/fx, -cy/fy, 1, 1;
+    rays.col(2) << (w-cx)/fx, (h-cy)/fy, 1, 1;
+    rays.col(3) << -cx/fx, (h-cy)/fy, 1, 1;
+    return rays;
+}
+
 template <typename T>
 std::string eigen_to_string(T&& m) {
     std::string out;
@@ -145,6 +160,34 @@ Eigen::MatrixD<4> initial_guess_tx_camera_tag(double tag_side_length,
     return tx_camera_tag;
 }
 
+void load_image_data(AppState* app_ptr) {
+    AppState& app = *app_ptr;
+    std::string image_just_added = app.tag_mapper.image_list().back();
+    auto& image_data = app.images[image_just_added];
+
+    // put a placholder for now
+    int default_width = 10;
+    int default_height = 5;
+    for (const auto& [other_image_id, other_image] : app.images) {
+        if (other_image.data) {
+            default_width = other_image.width;
+            default_height = other_image.height;
+            break;
+        }
+    }
+    image_data.width = default_width;
+    image_data.height = default_height;
+
+    // start a job to load the image
+    auto& scene = app.tag_mapper.get_scene();
+    if (scene.image_paths.count(image_just_added)) {
+        const std::string& path = scene.image_paths.at(image_just_added);
+        thread_pool.Push([path, &image_data](){
+            image_data.load(path, /*make_texture=*/false);                                    
+        });
+    }
+}
+
 void load_tag_mapper(AppState* app) {
     assert(app->tag_image_points_loaded);
     assert(!app->tag_mapper.get_scene().tag_detections.empty());
@@ -185,6 +228,8 @@ void load_tag_mapper(AppState* app) {
     }
     // tag_mapper.relinearize();
     app->tag_mapper_loaded = true;
+
+    load_image_data(app);
 }
 
 void add_tag_mapper_image(AppState* app) {
@@ -260,6 +305,8 @@ void add_tag_mapper_image(AppState* app) {
     }
 
     images_to_add.erase(best_image_to_add);
+
+    load_image_data(app);
 }
 
 static struct {
@@ -501,6 +548,7 @@ void frame_cb() {
             
             if (!app.images_to_add.empty() && ImGui::Button("Add image")) {
                 add_tag_mapper_image(&app);
+
             }
         }
         ImGui::EndChild();
@@ -579,29 +627,8 @@ void frame_cb() {
                     }
                     
                     if (!app.images.count(id)) {
-                        // init the image
-                        auto& image_data = app.images[id];
-
-                        // put a placholder for now
-                        int default_width = 10;
-                        int default_height = 5;
-                        for (const auto& [other_image_id, other_image] : app.images) {
-                            if (other_image.data) {
-                                default_width = other_image.width;
-                                default_height = other_image.height;
-                                break;
-                            }
-                        }
-                        image_data.width = default_width;
-                        image_data.height = default_height;
-
-                        // start a job to load the image
-                        if (scene.image_paths.count(id)) {
-                            const std::string& path = scene.image_paths.at(id);
-                            thread_pool.Push([path, &image_data](){
-                                image_data.load(path, /*make_texture=*/false);                                    
-                            });
-                        }
+                        // don't have this image yet... should not even be possible
+                        continue;
                     }
 
                     auto& img_data = app.images[id];
@@ -704,13 +731,97 @@ void frame_cb() {
                 
                 Eigen::VectorD<4> camparams;
                 camparams << f, f, window_width/2, window_height/2;
-                                
+
                 if (!app.tag_mapper.image_list().empty()) {
+                    Eigen::VectorD<6> dobject_se3;
+                    dobject_se3 << -app.dpitch, app.dyaw, app.droll, 0, 0, 0;
+                    dobject_se3.head<3>() *= M_PI;
+
+                    Eigen::VectorD<6> dcamera_se3;
+                    dcamera_se3 << 0, 0, 0, -app.dx, app.dy, app.dz;
+                    const Eigen::MatrixD<4> dobject = se3_exp(dobject_se3);
+                    const Eigen::MatrixD<4> dcamera = se3_exp(dcamera_se3);
+
+                    Eigen::MatrixD<4> tx_tc_camera = Eigen::id<4>();
+                    tx_tc_camera(2,3) = 0.5;
+                    tx_tc_camera.col(2) *= -1;
+                    tx_tc_camera.col(1) *= -1;
+                           
+                    Eigen::MatrixD<4> tx_world_tc = Eigen::id<4>();
+                    if (!app.tag_mapper.tag_list().empty()) {
+                        tx_world_tc = app.tag_mapper.get_tag_pose(app.tag_mapper.tag_list()[0]);
+                    }
+                    
                     auto image = ImGuiOverlayable::Rectangle(window_width, window_height, window_width-10);
 
-                    Eigen::MatrixD<4> tags_center = Eigen::id<4>();
-                    if (!app.tag_mapper.tag_list().empty()) {
-                        tags_center = app.tag_mapper.get_tag_pose(app.tag_mapper.tag_list()[0]);
+                    // draw camera frustums
+                    for (auto& frustum_id : app.tag_mapper.image_list()) {
+                        // all cameras share the same camparams
+                        if (!app.images.count(frustum_id)) {
+                            std::cout << "skipping image " << frustum_id << " since don't have the image" << "\n";
+
+                            // image not loaded yet,
+                            // don't know width and height
+                            continue;
+                        }
+
+                        ImColor frustum_color = ImColor::HSV(0.0f, 0.0f, 1.0f, 1.0f);
+
+                        const bool is_image_focused = (frustum_id == app.selected_image_id || app.selected_image_idx == -1);
+                        if (!is_image_focused) {
+                            frustum_color.Value.w = 0.5;
+                        }
+
+                        const auto& frustum_image = app.images[frustum_id];
+                        const auto& frustum_camparams = scene.camparams;
+                        const Eigen::MatrixD<4> rays = get_four_camera_rays(
+                            frustum_image.width,
+                            frustum_image.height,
+                            frustum_camparams);
+
+                        const Eigen::MatrixD<4> tx_tc_rays = tx_world_tc.inverse() * app.tag_mapper.get_camera_pose(frustum_id);
+                        const Eigen::MatrixD<4> tx_camera_rays = dcamera * tx_tc_camera.inverse() * dobject * tx_tc_rays;
+
+                        // std::cout << "rays_camera \n" << rays_camera << "\n";
+
+                        const double ray_scale_0 = 0.005;
+                        const double ray_scale_1 = 0.01;
+
+                        // top and bottom faces
+                        for (double d : {ray_scale_0, ray_scale_1}) {
+                            Eigen::MatrixD<4> rays_scaled = rays;
+                            rays_scaled.block<3,4>(0,0) *= d;
+                            const Eigen::MatrixD<4> rays_camera = tx_camera_rays * rays_scaled; // rays in 3d viewer frame
+
+                            for (int i = 0; i < 4; ++i) {
+                                int next_i = (i+1)%4;
+                                Eigen::VectorD<4> ray_a = rays_camera.col(i);
+                                Eigen::VectorD<4> ray_b = rays_camera.col(next_i);
+                                Eigen::VectorD<2> ray_a_px = apply_camera_matrix(camparams, ray_a);
+                                Eigen::VectorD<2> ray_b_px = apply_camera_matrix(camparams, ray_b);
+                                image.add_line(float(ray_a_px(0)), float(ray_a_px(1)),
+                                               float(ray_b_px(0)), float(ray_b_px(1)),
+                                               frustum_color);
+                            }
+                        }
+
+                        // links of top and bottom faces
+                        for (int i = 0; i < 4; ++i) {
+                            Eigen::MatrixD<4> rays_scaled_a = rays;
+                            rays_scaled_a.block<3,4>(0,0) *= ray_scale_0;
+                            Eigen::MatrixD<4> rays_scaled_b = rays;
+                            rays_scaled_b.block<3,4>(0,0) *= ray_scale_1;
+                            const Eigen::MatrixD<4> rays_camera_a = tx_camera_rays * rays_scaled_a; // rays in 3d viewer frame
+                            const Eigen::MatrixD<4> rays_camera_b = tx_camera_rays * rays_scaled_b; // rays in 3d viewer frame
+                            
+                            Eigen::VectorD<4> ray_a = rays_camera_a.col(i);
+                            Eigen::VectorD<4> ray_b = rays_camera_b.col(i);
+                            Eigen::VectorD<2> ray_a_px = apply_camera_matrix(camparams, ray_a);
+                            Eigen::VectorD<2> ray_b_px = apply_camera_matrix(camparams, ray_b);
+                            image.add_line(float(ray_a_px(0)), float(ray_a_px(1)),
+                                           float(ray_b_px(0)), float(ray_b_px(1)),
+                                           frustum_color);
+                        }
                     }
 
                     for (auto& tag : app.tag_mapper.tag_list()) {
@@ -719,36 +830,16 @@ void frame_cb() {
                             is_tag_focused = (app.selected_tag_id == tag);
                         }
 
-                        Eigen::MatrixD<4> tx_tc_camera = Eigen::id<4>();
-                        tx_tc_camera(2,3) = 0.5;
-                        tx_tc_camera.col(2) *= -1;
-                        tx_tc_camera.col(1) *= -1;
-                           
-                        std::array<Eigen::VectorD<2>, 4> proj_points;
-
-                        Eigen::VectorD<6> dobject_se3;
-                        dobject_se3 << -app.dpitch, app.dyaw, app.droll, 0, 0, 0;
-                        dobject_se3.head<3>() *= M_PI;
-
-                        Eigen::VectorD<6> dcamera_se3;
-                        dcamera_se3 << 0, 0, 0, -app.dx, app.dy, app.dz;
-                        const Eigen::MatrixD<4> dobject = se3_exp(dobject_se3);
-                        const Eigen::MatrixD<4> dcamera = se3_exp(dcamera_se3);
-
                         // take the tag from the tagmapper
-                        const Eigen::MatrixD<4> tx_tc_tag = tags_center.inverse() * app.tag_mapper.get_tag_pose(tag);
-
-                        // std::cout << "tag " << tag << "============== \n";
-                        // std::cout << tx_world_tag << "\n";
-
+                        const Eigen::MatrixD<4> tx_tc_tag = tx_world_tc.inverse() * app.tag_mapper.get_tag_pose(tag);
                         const Eigen::MatrixD<4> tx_camera_tag = dcamera * tx_tc_camera.inverse() * dobject * tx_tc_tag;
                         const auto tag_corners = make_tag_corners(scene.get_tag_side_length(tag));
+                        std::array<Eigen::VectorD<2>, 4> proj_points;                        
                         for (int i = 0; i < 4; ++i) {
                             Eigen::VectorD<4> camera_point = tx_camera_tag * tag_corners[i];
                             Eigen::VectorD<2> proj_point = apply_camera_matrix(camparams, camera_point);
                             proj_points[i] = proj_point;
                         }
-
                         // project it
                         float thickness = 1.0;
                         if (is_tag_focused) {
