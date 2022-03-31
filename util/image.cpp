@@ -4,7 +4,7 @@
 
 #include "image.h"
 #include "stb_image.h"
-#include "sokol_gfx.h"
+#include "sokol/sokol_gfx.h"
 
 namespace carl {
 

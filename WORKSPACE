@@ -36,6 +36,7 @@ cc_library(
     hdrs = glob(['*.h']) + ['util/sokol_imgui.h'],
     linkopts = ['-lGL', '-lX11', '-ldl', '-lXcursor', '-lXi'],
     visibility = ['//visibility:public'],
+    include_prefix = 'sokol'
 )
 """
 )

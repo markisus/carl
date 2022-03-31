@@ -15,11 +15,11 @@
 #include "opencv2/imgcodecs.hpp"
 #define SOKOL_IMPL
 #define SOKOL_GLCORE33
-#include "sokol_gfx.h"
-#include "sokol_app.h"
-#include "sokol_glue.h"
+#include "sokol/sokol_gfx.h"
+#include "sokol/sokol_app.h"
+#include "sokol/sokol_glue.h"
 #include "imgui.h"
-#include "util/sokol_imgui.h"
+#include "sokol/util/sokol_imgui.h"
 #include "util/imgui_overlayable.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -531,7 +531,7 @@ void frame_cb() {
 
                     ImGui::SliderFloat("dx", &app.dx, -5, 5 );
                     ImGui::SliderFloat("dy",  &app.dy, -5, 5);
-                    ImGui::SliderFloat("dz", &app.dz, -5, 5);
+                    ImGui::SliderFloat("dz", &app.dz, -0.5, 5);
                     ImGui::SliderFloat("droll",  &app.droll, -1.0, 1.0);
                     ImGui::SliderFloat("dpitch",  &app.dpitch, -1.0, 1.0);
                     ImGui::SliderFloat("dyaw",  &app.dyaw, -1.0, 1.0);
@@ -699,12 +699,14 @@ void frame_cb() {
                 app.tag_mapper.visit_variable_layout(display_variable, (void*)(&app));
             }
             if (selected_tab == 2) {
-                const auto camparams = app.tag_mapper.get_camparams();
+                const float window_height = ImGui::GetWindowHeight();
+                const float f = 1000;
+                
+                Eigen::VectorD<4> camparams;
+                camparams << f, f, window_width/2, window_height/2;
+                                
                 if (!app.tag_mapper.image_list().empty()) {
-                    const std::string& default_image_id = app.tag_mapper.image_list()[0];
-                    const int default_image_width = 1280;
-                    const int default_image_height = 720;
-                    auto image = ImGuiOverlayable::Rectangle(default_image_width, default_image_height, window_width-10);
+                    auto image = ImGuiOverlayable::Rectangle(window_width, window_height, window_width-10);
 
                     Eigen::MatrixD<4> tags_center = Eigen::id<4>();
                     if (!app.tag_mapper.tag_list().empty()) {
