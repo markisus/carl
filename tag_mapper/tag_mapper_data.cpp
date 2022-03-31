@@ -6,7 +6,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 
-#include "eigen_util.h"
+#include "util/eigen_util.h"
 #include "tag_mapper_data.h"
 
 namespace carl {

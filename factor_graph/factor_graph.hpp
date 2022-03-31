@@ -4,8 +4,8 @@
 #include "Eigen/Dense"
 #include "entt/entity/registry.hpp"
 #include "layout_data.h"
-#include "gaussian_math.hpp"
-#include "eigen_util.h"
+#include "math/gaussian_math.hpp"
+#include "util/eigen_util.h"
 
 inline Eigen::Map<Eigen::VectorXd> eigen_vector_map(void* data, uint8_t dim) {
     return Eigen::Map<Eigen::VectorXd> {(double*)data, dim, 1};

@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <map>
 #include <unordered_map>
-#include "eigen_util.h"
+#include "util/eigen_util.h"
 
 namespace carl {
 

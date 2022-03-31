@@ -1,8 +1,8 @@
 #include <cassert>
 
 #include "tag_mapper.h"
-#include "factor_graph.hpp"
-#include "geometry.h"
+#include "factor_graph/factor_graph.hpp"
+#include "math/geometry.h"
 #include "absl/strings/str_format.h"
 
 namespace carl {
@@ -23,7 +23,7 @@ struct TagMapperImpl {
     static constexpr uint8_t CAMERA_POSE = 1;
     static constexpr uint8_t TAG_POSE = 2;
 
-    int RELIN_PERIOD = 50;
+    int RELIN_PERIOD = 5;
     int time_until_relinearize = RELIN_PERIOD;
 
     bool scene_initted = false;

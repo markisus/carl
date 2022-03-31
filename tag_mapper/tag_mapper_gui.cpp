@@ -8,7 +8,7 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "Eigen/Dense"
-#include "geometry.h"
+#include "math/geometry.h"
 #include "opencv2/calib3d/calib3d.hpp"
 #include "opencv2/core/eigen.hpp"
 #include "opencv2/core.hpp"
@@ -20,14 +20,14 @@
 #include "sokol_glue.h"
 #include "imgui.h"
 #include "util/sokol_imgui.h"
-#include "imgui_overlayable.h"
+#include "util/imgui_overlayable.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "tag_mapper.h"
 #include "tag_mapper_data.h"
-#include "layout_data.h"
-#include "image.h"
-#include "thread_pool.h"
+#include "factor_graph/layout_data.h"
+#include "util/image.h"
+#include "util/thread_pool.h"
 
 using namespace carl;
 using namespace tag_mapper;

@@ -1,5 +1,5 @@
 #include "geometry.h"
-#include "eigen_util.h"
+#include "util/eigen_util.h"
 #include <iostream>
 
 namespace carl {

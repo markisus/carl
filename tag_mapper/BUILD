@@ -1,0 +1,54 @@
+cc_library(
+    name="tag_mapper_data",
+    srcs=["tag_mapper_data.cpp"],
+    hdrs=["tag_mapper_data.h"],
+    deps=[
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings",
+        "//util:eigen_util",
+        "//factor_graph",
+    ])
+
+cc_library(
+    name="tag_mapper",
+    srcs=[
+        "tag_mapper.cpp",
+        "tag_mapper.h",
+    ],
+    hdrs=[
+        "tag_mapper.h"
+    ],
+    deps=[
+        "//factor_graph",
+        "//math:geometry",
+        "//util:eigen_util",
+        ":tag_mapper_data",
+        "@com_gitlab_libeigen_eigen//:eigen",
+    ],
+    visibility=['//visibility:public']
+)
+
+cc_binary(
+    name="tag_mapper_gui",
+    srcs=[
+        "tag_mapper_gui.cpp",
+    ],
+    deps=[
+        "//factor_graph",
+        "//math:geometry",
+        "//util:eigen_util",
+        "//util:image",
+        "//util:thread_pool",
+        "//util:imgui_overlayable",
+        ":tag_mapper",
+        ":tag_mapper_data",
+        "@com_github_floooh_sokol//:sokol",
+        "@com_github_nothings_stb//:stb",
+        "@com_github_ocornut_imgui//:imgui",
+        "@com_gitlab_libeigen_eigen//:eigen",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@usr//:opencv",
+    ]
+    
+)

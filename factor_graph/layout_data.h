@@ -1,6 +1,6 @@
 #pragma once
 #include "Eigen/Dense"
-#include "eigen_util.h"
+#include "util/eigen_util.h"
 #include <string>
 
 namespace carl {
