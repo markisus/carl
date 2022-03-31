@@ -172,11 +172,6 @@ struct FactorData {
     static constexpr bool nonlinear = NONLINEAR;
 };
 
-struct VariableInfo {
-    uint8_t dimension;
-    uint8_t type;
-};
-
 struct FactorConnection {
     entt::entity factor;
     uint8_t factor_dimension;
@@ -185,7 +180,6 @@ struct FactorConnection {
 
 struct VariableConnection {
     entt::entity variable;
-    uint8_t variable_dimension;
 };
 
 template <typename F, typename D>
@@ -408,7 +402,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         const auto variable_id = variables.create();
 
         variables.emplace<EnableFlag>(variable_id);
-        variables.emplace<VariableInfo>(variable_id, uint8_t(dim), type);
         variables.emplace<Mean<dim>>(variable_id, prior_mean);
         variables.emplace<PriorMean<dim>>(variable_id, prior_mean);
         variables.emplace<Covariance<dim>>(variable_id, prior_covariance);
@@ -440,14 +433,12 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         entt::entity variable = variable_handle.entity;
         const auto& factor_info = factors.get<FactorInfo>(factor);
         const uint8_t factor_dimension = factor_info.dimension;
-        const uint8_t variable_dimension = variables.get<VariableInfo>(variable).dimension;
-        assert((variable_dimension == dim));
         assert((factor_slot < factor_dimension));
 
         const auto edge_id = edges.create();
         edges.emplace<EnableFlag>(edge_id);
         edges.emplace<FactorNeedsInitFlag>(edge_id);
-        edges.emplace<VariableConnection>(edge_id, variable, uint8_t(dim));
+        edges.emplace<VariableConnection>(edge_id, variable);
         edges.emplace<FactorConnection>(edge_id, factor, factor_dimension, factor_slot);
 
         edges.emplace<ToVariableMessage<dim>>(edge_id);        
@@ -879,7 +870,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         for (auto [edge, residual] : edges.template view<EdgeResidual>().each()) {
             edges.emplace<EnableFlag>(edge);
             // enable variables and variables connected to this edge
-            // const auto variable = edges.get<VariableConnection>(edge).variable;
             const auto factor = edges.get<FactorConnection>(edge).factor;
             factors.template emplace_or_replace<EnableFlag>(factor);
             num_fac_edges += 1;
