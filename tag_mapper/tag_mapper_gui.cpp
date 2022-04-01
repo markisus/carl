@@ -28,11 +28,14 @@
 #include "factor_graph/layout_data.h"
 #include "util/image.h"
 #include "util/thread_pool.h"
+#include "entt/fwd.hpp"
 
 using namespace carl;
 using namespace tag_mapper;
 
 ThreadPool thread_pool = {/*num_threads=*/1};
+
+const int NON_TAG_ID = std::numeric_limits<int>::max();
 
 struct AppState {
     bool images_loaded = false;
@@ -53,11 +56,8 @@ struct AppState {
 
     ImGuiOverlayable graph_display;
 
-    int selected_image_idx = -1;
     std::string selected_image_id = "";
-
-    int selected_tag_idx = -1;
-    int selected_tag_id = 0;
+    int selected_tag_id = NON_TAG_ID;
 
     // camera control for 3d view
     float dx = 0;
@@ -331,7 +331,7 @@ const uint32_t tag_colors[4] = {
 
 const float MAX_DISPLAY_AGE = 100;
 
-void display_variable(LayoutData* layout, VariableError* error, void* d) {
+void display_variable(const VariableViz& viz, void* d) {
     AppState& app = *((AppState*)d);
 
     const float lens[2] = { 0.2, 0.15 };
@@ -341,12 +341,12 @@ void display_variable(LayoutData* layout, VariableError* error, void* d) {
 
     for (int i = 0; i < 2; ++i) {
         if (i == 0) {
-            float age = (float)error->age;
+            float age = (float)viz.age;
             age = std::min<float>(age/MAX_DISPLAY_AGE, 1);
             lits[i] = 1.0 - age;
         }
         if (i == 1) {
-            float total_error = float(error->total());
+            float total_error = float(viz.error);
             const float error = std::sqrt(total_error);
             const float error_max = 20;
             const float redness = std::clamp<float>(error/error_max, 0, 1);
@@ -354,23 +354,34 @@ void display_variable(LayoutData* layout, VariableError* error, void* d) {
         }
 
         auto picker = app.graph_display.add_circle_filled(
-            layout->position(0),
-            layout->position(1),
+            (*viz.position)(0),
+            (*viz.position)(1),
             lens[i]/2,
             ImColor::HSV(hues[i], sats[i], lits[i], 1.0f));
 
-        if (i == 0) {            
+        if (i == 0) {
             if (picker.contains(ImGui::GetMousePos())) {
-                ImGui::SetTooltip("%s\nError: %f\nAge: %d",
-                                  error->display_string.c_str(),
-                                  error->total(),
-                                  error->age);
+                ImGui::SetTooltip(
+                    "%s %s\nError: %f\nAge: %d",
+                    VAR_TYPE_STRS[viz.type],
+                    viz.id->c_str(),
+                    viz.error,
+                    viz.age);
+
+                if (ImGui::IsMouseClicked(0)) {
+                    if (viz.type == VAR_TYPE_IMAGE_POSE) {
+                        app.selected_image_id = *viz.id;
+                    }
+                    if (viz.type == VAR_TYPE_TAG_POSE) {
+                        app.selected_tag_id = std::stoi(*viz.id); // very ugly... use std::any?
+                    }
+                }
             }
         }
     }
 };
 
-void display_factor(LayoutData* layout, FactorError* error, void* d) {
+void display_factor(const FactorViz& viz, void* d) {
     AppState& app = *((AppState*)d);
 
     const float lens[2] = { 0.2, 0.15 };
@@ -380,16 +391,14 @@ void display_factor(LayoutData* layout, FactorError* error, void* d) {
 
     for (int i = 0; i < 2; ++i) {
         if (i == 0) {
-            float age = (float)error->age;
+            float age = (float)viz.age;
             age = std::min<float>(age/MAX_DISPLAY_AGE, 1);
             lits[i] = 1.0 - age;
         }
         if (i == 1) {
-            float total_error = float(error->total());
+            float total_error = float(viz.error);
             if (total_error < 0) {
                 std::cout << "Negative error? " << total_error << "\n";
-                std::cout << "offset? " << error->offset << "\n";
-                std::cout << "delta? " << error->delta << "\n";
                 exit(-1);
             }
             const float error = std::sqrt(total_error);
@@ -398,43 +407,46 @@ void display_factor(LayoutData* layout, FactorError* error, void* d) {
             sats[i] = redness;
         }
 
-
         auto picker = app.graph_display.add_rect_filled(
-            layout->position(0) - lens[i]/2,
-            layout->position(1) - lens[i]/2,
-            layout->position(0) + lens[i]/2,
-            layout->position(1) + lens[i]/2,
+            (*viz.position)(0) - lens[i]/2,
+            (*viz.position)(1) - lens[i]/2,
+            (*viz.position)(0) + lens[i]/2,
+            (*viz.position)(1) + lens[i]/2,
             ImColor::HSV(hues[i], sats[i], lits[i], 1.0f));
 
         if (i == 0) {            
             if (picker.contains(ImGui::GetMousePos())) {
-                ImGui::SetTooltip("%s\nError: %f\nAge: %d",
-                                  error->display_string.c_str(),
-                                  error->total(),
-                                  error->age);
+                ImGui::SetTooltip("Tag %d, Image %s\nError: %f\nAge: %d",
+                                  viz.tag_id,
+                                  viz.image_id->c_str(),
+                                  viz.error,
+                                  viz.age);
+                if (ImGui::IsMouseClicked(0)) {
+                    app.selected_image_id = *viz.image_id;
+                    app.selected_tag_id = viz.tag_id;
+                }
             }
         }
     }
 };
 
-void display_edge(LayoutData* l_v, LayoutData* l_f, EdgeResidual* residual, void* d) {
+void display_edge(const EdgeViz& viz, void* d) {
     AppState& app = *((AppState*)d);
 
-    Eigen::VectorD<2> center = (l_v->position + l_f->position)/2;
-
-    const float to_factor_redness = std::min<float>(residual->to_factor/0.1, 1.0f);
-    const float to_var_redness = std::min<float>(residual->to_variable/0.1, 1.0f);
+    Eigen::VectorD<2> center = (*viz.variable_position + *viz.factor_position)/2;
+    const float to_factor_redness = std::min<float>(viz.to_factor_residual/0.1, 1.0f);
+    const float to_var_redness = std::min<float>(viz.to_variable_residual/0.1, 1.0f);
 
     app.graph_display.add_line(
-        l_v->position(0),
-        l_v->position(1),
+        (*viz.variable_position)(0),
+        (*viz.variable_position)(1),
         center(0), center(1),
         ImColor::HSV(1.0f, to_var_redness, 1.0f, 0.3f + 0.7*to_var_redness),
         1.0);
 
     app.graph_display.add_line(
-        l_f->position(0),
-        l_f->position(1),
+        (*viz.factor_position)(0),
+        (*viz.factor_position)(1),
         center(0), center(1),
         ImColor::HSV(1.0f, to_factor_redness, 1.0f, 0.3f + 0.7*to_factor_redness),
         1.0);
@@ -445,8 +457,8 @@ void display_edge(LayoutData* l_v, LayoutData* l_f, EdgeResidual* residual, void
 
     if (picker.contains(ImGui::GetMousePos())) {
         ImGui::SetTooltip("residuals\nto_factor: %f\nto_variable: %f",
-                          residual->to_factor,
-                          residual->to_variable);
+                          viz.to_factor_residual,
+                          viz.to_variable_residual);
     }
 };
 
@@ -500,27 +512,25 @@ void frame_cb() {
             }
 
             auto camparams = app.tag_mapper.get_camparams();
-            ImGui::Text("camparams: %s", eigen_to_string(camparams.transpose()).c_str());
-            // ImGui::Text("last err: %f", app.last_err);
-            // ImGui::Text("last err stddev: %f", sqrt(app.last_err/app.num_tags_added));
-            
+            ImGui::Text("Camparams (fx,fy,cx,cy): %s", eigen_to_string(camparams.transpose()).c_str());
             ImGui::Text("Images (%lu / %lu)", app.tag_mapper.image_list().size(), scene.tag_detections.size());
             const auto& images = app.tag_mapper.image_list();
             if (ImGui::BeginListBox("##Images Selector", ImVec2(-FLT_MIN, 10*ImGui::GetTextLineHeightWithSpacing()))) {
-                for (int i = -1; i < int(images.size()); ++i) {
-                    const bool is_selected = (app.selected_image_idx == i);
-                    if (i == -1) {
-                        if (ImGui::Selectable("Select All", is_selected)) {
-                            app.selected_image_idx = -1;
-                            app.selected_image_id = "";
-                        }
-                    } else if (ImGui::Selectable(images[i].c_str(), is_selected)) {
-                        app.selected_image_idx = i;
-                        app.selected_image_id = images[i];
+                const bool is_selected = app.selected_image_id.empty();
+                if (ImGui::Selectable("Select All", is_selected)) {
+                    app.selected_image_id = "";
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                for (const auto& image_id : images) {
+                    const bool is_selected = (app.selected_image_id == image_id);
+                    if (ImGui::Selectable(image_id.c_str(), is_selected)) {
+                        app.selected_image_id = image_id;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
-                    }              
+                    }
                 }
             }
             ImGui::EndListBox();
@@ -528,20 +538,18 @@ void frame_cb() {
             ImGui::Text("Tags");
             const auto& tags = app.tag_mapper.tag_list();
             if (ImGui::BeginListBox("##Tags Selector", ImVec2(-FLT_MIN, 10*ImGui::GetTextLineHeightWithSpacing()))) {
-                for (int i = -1; i < int(tags.size()); ++i) {
-                    const bool is_selected = (app.selected_tag_idx == i);
-                    if (i == -1) {
-                        if (ImGui::Selectable("Select All", is_selected)) {
-                            app.selected_tag_idx = -1;
-                            app.selected_tag_id = -1;
-                        }
-                    } else if (ImGui::Selectable(std::to_string(tags[i]).c_str(), is_selected)) {
-                        app.selected_tag_idx = i;
-                        app.selected_tag_id = tags[i];
+                const bool is_selected = app.selected_tag_id == NON_TAG_ID;
+                if (ImGui::Selectable("Select All", is_selected)) {
+                    app.selected_tag_id = NON_TAG_ID;
+                }
+                for (const int tag_id : tags) {
+                    const bool is_selected = (app.selected_tag_id == tag_id);
+                    if (ImGui::Selectable(std::to_string(tag_id).c_str(), is_selected)) {
+                        app.selected_tag_id = tag_id;
                     }
                     if (is_selected) {
                         ImGui::SetItemDefaultFocus();
-                    }              
+                    }
                 }
             }
             ImGui::EndListBox();
@@ -591,34 +599,32 @@ void frame_cb() {
             ImGui::BeginChild("tab contents");
             if (selected_tab == 0) {
                 // num images per line depends on if we're viewing all, or 1 image
-                int num_images_per_line = app.selected_image_idx == -1 ? 4 : 1;
+                int num_images_per_line = app.selected_image_id.empty() ? 4 : 1;
                 int image_idx = 1;
 
-                if (app.selected_image_idx != -1 &&
-                    app.selected_tag_idx != -1) {
+                if (!app.selected_image_id.empty() &&
+                    app.selected_tag_id != NON_TAG_ID) {
                     if(!scene.tag_detections[app.selected_image_id].count(app.selected_tag_id)) {
                         ImGui::Text("tag:%d does not appear in image:%s",
                                     app.selected_tag_id, app.selected_image_id.c_str());
 
                         if (ImGui::Button("View all tags in this image")) {
-                            app.selected_tag_idx = -1;
-                            app.selected_tag_id = -1;
+                            app.selected_tag_id = NON_TAG_ID;
                         }
 
                         if (ImGui::Button("View all images containing this tag")) {
-                            app.selected_image_idx = -1;
                             app.selected_image_id = "";
                         }
                     }
                 }
                 
                 for (const auto& id : app.tag_mapper.image_list()) {
-                    if (app.selected_image_idx != -1 &&
+                    if (!app.selected_image_id.empty() &&
                         app.selected_image_id != id) {
                         continue;
                     }
 
-                    if (app.selected_tag_idx != -1) {
+                    if (app.selected_tag_id != NON_TAG_ID) {
                         // don't display this image if it has none
                         // of the selected tags
                         if (!scene.tag_detections[id].count(app.selected_tag_id)) {
@@ -666,7 +672,7 @@ void frame_cb() {
                         }
                     }
 
-                    const auto tx_world_camera = app.tag_mapper.get_camera_pose(id);
+                    const auto tx_world_camera = app.tag_mapper.get_image_pose(id);
                     if (app.show_projects) {
                         const auto camparams = app.tag_mapper.get_camparams();        
             
@@ -676,7 +682,7 @@ void frame_cb() {
                             }
 
                             bool is_tag_focused = true;
-                            if (app.selected_tag_idx >= 0) {
+                            if (app.selected_tag_id != NON_TAG_ID) {
                                 is_tag_focused = (app.selected_tag_id == tag);
                             }
                             
@@ -721,9 +727,9 @@ void frame_cb() {
                 app.graph_display = ImGuiOverlayable::Rectangle(data_size, data_size, display_size);
                 app.graph_display.data_center_x = 0;
                 app.graph_display.data_center_y = 0;
-                app.tag_mapper.visit_edge_layout(display_edge, (void*)(&app));        
-                app.tag_mapper.visit_factor_layout(display_factor, (void*)(&app));
-                app.tag_mapper.visit_variable_layout(display_variable, (void*)(&app));
+                app.tag_mapper.visit_edge_viz(display_edge, (void*)(&app));        
+                app.tag_mapper.visit_factor_viz(display_factor, (void*)(&app));
+                app.tag_mapper.visit_variable_viz(display_variable, (void*)(&app));
             }
             if (selected_tab == 2) {
                 const float window_height = ImGui::GetWindowHeight();
@@ -767,7 +773,7 @@ void frame_cb() {
 
                         ImColor frustum_color = ImColor::HSV(0.0f, 0.0f, 1.0f, 1.0f);
 
-                        const bool is_image_focused = (frustum_id == app.selected_image_id || app.selected_image_idx == -1);
+                        const bool is_image_focused = (frustum_id == app.selected_image_id || app.selected_image_id.empty());
                         if (!is_image_focused) {
                             frustum_color.Value.w = 0.5;
                         }
@@ -779,7 +785,7 @@ void frame_cb() {
                             frustum_image.height,
                             frustum_camparams);
 
-                        const Eigen::MatrixD<4> tx_tc_rays = tx_world_tc.inverse() * app.tag_mapper.get_camera_pose(frustum_id);
+                        const Eigen::MatrixD<4> tx_tc_rays = tx_world_tc.inverse() * app.tag_mapper.get_image_pose(frustum_id);
                         const Eigen::MatrixD<4> tx_camera_rays = dcamera * tx_tc_camera.inverse() * dobject * tx_tc_rays;
 
                         // std::cout << "rays_camera \n" << rays_camera << "\n";
@@ -826,7 +832,7 @@ void frame_cb() {
 
                     for (auto& tag : app.tag_mapper.tag_list()) {
                         bool is_tag_focused = true;
-                        if (app.selected_tag_idx >= 0) {
+                        if (app.selected_tag_id != NON_TAG_ID) {
                             is_tag_focused = (app.selected_tag_id == tag);
                         }
 

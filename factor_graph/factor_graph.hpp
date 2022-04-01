@@ -206,8 +206,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
     entt::registry variables;
     entt::registry edges;
 
-    double max_factor_change = 0;
-
     double total_error = 0;
 
     bool layout_converged = false;
@@ -227,26 +225,24 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return ((dim == int(F_DIMS)) || ...);
     }
 
-    void visit_variable_layout(void (*visiter)(LayoutData*, VariableError*, void*), void* user_data) {
-        for (auto [_, layout, variable_error] : variables.view<LayoutData, VariableError>().each()) {
-            visiter(&layout, &variable_error, user_data);
-        }
-    }
-
-    void visit_edge_layout(void (*visiter)(LayoutData*, LayoutData*, EdgeResidual*, void*), void* user_data) {
-        for (auto [edge, factor_connection, variable_connection, residual] :
-                 edges.view<FactorConnection, VariableConnection, EdgeResidual>().each()) {
-            auto& v_layout = variables.get<LayoutData>(variable_connection.variable);
-            auto& f_layout = factors.get<LayoutData>(factor_connection.factor);
-            visiter(&f_layout, &v_layout, &residual, user_data);
-        }
-    }
-
-    void visit_factor_layout(void(*visiter)(LayoutData*, FactorError*, void*), void* user_data) {
-        for (auto [_, layout, factor_error] : factors.view<LayoutData, FactorError>().each()) {
-            visiter(&layout, &factor_error, user_data);
-        }
-    }
+    // void visit_variable_layout(void (*visiter)(const LayoutData&, const VariableSummary&, void*), void* user_data) {
+    //     for (auto [_, layout, variable_summary] : variables.view<LayoutData, VariableSummary>().each()) {
+    //         visiter(layout, variable_summary, user_data);
+    //     }
+    // }
+    // void visit_edge_layout(void (*visiter)(const LayoutData&, const LayoutData&, const EdgeResidual&, void*), void* user_data) {
+    //     for (auto [edge, factor_connection, variable_connection, residual] :
+    //              edges.view<FactorConnection, VariableConnection, EdgeResidual>().each()) {
+    //         auto& v_layout = variables.get<LayoutData>(variable_connection.variable);
+    //         auto& f_layout = factors.get<LayoutData>(factor_connection.factor);
+    //         visiter(f_layout, v_layout, residual, user_data);
+    //     }
+    // }
+    // void visit_factor_layout(void(*visiter)(const LayoutData&, const FactorSummary&, void*), void* user_data) {
+    //     for (auto [_, layout, factor_summary] : factors.view<LayoutData, FactorSummary>().each()) {
+    //         visiter(layout, factor_summary, user_data);
+    //     }
+    // }
 
     void reset_layout_damping() {
         layout_converged = false;
@@ -394,7 +390,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
     template <int dim>
     VariableHandle<dim> add_variable(
-        uint8_t type,
         const Eigen::Matrix<double, dim, 1>& prior_mean,
         const Eigen::Matrix<double, dim, dim>& prior_covariance) {
         static_assert(variable_dimension_supported<dim>());
@@ -419,7 +414,8 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         variables.emplace<InfoVectorDelta<dim>>(variable_id, InfoVectorDelta<dim>::Zero());
 
         variables.emplace<LayoutData>(variable_id);
-        variables.emplace<VariableError>(variable_id);
+        variables.emplace<VariableSummary>(variable_id);
+        
 
         reset_layout_damping();
 
@@ -504,16 +500,6 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         return eigen_vector_map(raw, factor_dim);
     };
 
-    template <int dim>
-    void set_display_string(FactorHandle<dim> factor, const std::string& display_string) {
-        factors.get<FactorError>(factor).display_string = display_string;
-    }
-
-    template <int dim>
-    void set_display_string(VariableHandle<dim> variable, const std::string& display_string) {
-        variables.get<VariableError>(variable).display_string = display_string;
-    }
-
     template <typename TFactorData>
     auto add_factor(TFactorData&& factor_data) {
         static_assert(factor_dimension_supported<factor_data.dimension>());
@@ -539,7 +525,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         factors.emplace<InfoMatrix<dim>>(factor_id);
 
         factors.emplace<LayoutData>(factor_id);
-        factors.emplace<FactorError>(factor_id);
+        factors.emplace<FactorSummary>(factor_id);
         factors.emplace<LinearizationPoint<dim>>(factor_id);
 
         factors.emplace<EnableFlag>(factor_id);
@@ -577,16 +563,15 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
     template <int dim>
     void update_factor_errors() {
-        max_factor_change = 0;
         // update factor errors
-        for (auto [_, factor_error, mean, info_vector, info_matrix] :
+        for (auto [_, factor_summary, mean, info_vector, info_matrix] :
                  factors.template view<
-                 FactorError, Mean<dim>, InfoVector<dim>, InfoMatrix<dim>>().each()) {
+                 FactorSummary, Mean<dim>, InfoVector<dim>, InfoMatrix<dim>>().each()) {
             // || J Δ - r ||² = Δ.t J.tJ Δ - 2 r.t J Δ + r.t r
             //                  ~~~~~~~~~~~~~~~~~~~~~~   ~~~~~
             //                            |                |
             //                           delta           offset
-            factor_error.delta = mean.transpose() * info_matrix * mean - 2.0 * info_vector.dot(mean);
+            factor_summary.delta = mean.transpose() * info_matrix * mean - 2.0 * info_vector.dot(mean);
         }
     }
 
@@ -625,18 +610,17 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
         
         for (auto [_, mean, covariance, info_vector,
                    info_vector_delta, info_vector_delta_recentered, linearization_point,
-                   info_matrix, info_matrix_delta, factor_error] :
+                   info_matrix, info_matrix_delta, factor_summary] :
                  factors.template view<
                  Flag, Mean<dim>, Covariance<dim>,                 
                  InfoVector<dim>, InfoVectorDelta<dim>, InfoVectorDeltaRecentered<dim>,
                  LinearizationPoint<dim>,
-                 InfoMatrix<dim>, InfoMatrixDelta<dim>, FactorError>().each()) {
+                 InfoMatrix<dim>, InfoMatrixDelta<dim>, FactorSummary>().each()) {
 
             info_vector_delta_recentered = info_vector_delta - info_matrix_delta * linearization_point;
             const Eigen::MatrixD<dim> total_info_matrix = info_matrix + info_matrix_delta;
             const Eigen::VectorD<dim> total_info_vector = info_vector + info_vector_delta_recentered;
 
-            Eigen::VectorD<dim> previous_mean = mean;
             auto llt = total_info_matrix.llt();
             mean = llt.solve(total_info_vector);
             covariance = llt.solve(Eigen::id<dim>());
@@ -651,9 +635,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
                 exit(-1);
             }
 
-            double change = (mean-previous_mean).template lpNorm<Eigen::Infinity>();
-            factor_error.change = change;
-            factor_error.age = 0;
+            factor_summary.age = 0;
         }
 
         update_factor_errors<dim>();
@@ -661,20 +643,20 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
     void age_variables() {
         // age the variables
-        for (auto [_, variable_error]: variables.template view<VariableError>().each()) {
-            variable_error.age += 1;
-            if (variable_error.age > MAX_AGE) {
-                variable_error.age = MAX_AGE;
+        for (auto [_, variable_summary]: variables.template view<VariableSummary>().each()) {
+            variable_summary.age += 1;
+            if (variable_summary.age > MAX_AGE) {
+                variable_summary.age = MAX_AGE;
             }
         }
     }
 
     void age_factors() {
         // age the factors
-        for (auto [_, factor_error]: factors.template view<FactorError>().each()) {
-            factor_error.age += 1;
-            if (factor_error.age > MAX_AGE) {
-                factor_error.age = MAX_AGE;
+        for (auto [_, factor_summary]: factors.template view<FactorSummary>().each()) {
+            factor_summary.age += 1;
+            if (factor_summary.age > MAX_AGE) {
+                factor_summary.age = MAX_AGE;
             }
         }
     }
@@ -783,11 +765,11 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
 
         // update the prior errors
         // (x - μ).t Λ (x - μ)
-        for (auto [_, mean, prior_mean, prior_info_mat, prior_info_vec, variable_error] : variables.template view<
+        for (auto [_, mean, prior_mean, prior_info_mat, prior_info_vec, variable_summary] : variables.template view<
                  EnableFlag,
-                 Mean<dim>, PriorMean<dim>, InfoMatrixPrior<dim>, InfoVectorPrior<dim>, VariableError>().each()) {
+                 Mean<dim>, PriorMean<dim>, InfoMatrixPrior<dim>, InfoVectorPrior<dim>, VariableSummary>().each()) {
             auto delta = (mean - prior_mean);
-            variable_error.prior_error = delta.transpose() * prior_info_mat * delta;
+            variable_summary.prior_error = delta.transpose() * prior_info_mat * delta;
 
             // moving the prior mean
             // (x - (μ+d)).t Λ (x - (μ+d)) = 
@@ -798,7 +780,7 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
             prior_mean += increment;
             prior_info_vec += prior_info_mat * increment;
 
-            variable_error.age = 0;
+            variable_summary.age = 0;
         }
     }
 
@@ -899,12 +881,8 @@ struct FactorGraph<Dims<F_DIMS...>, Dims<V_DIMS...>> {
     void update_factors_finish_impl_3() {
         // update total error
         total_error = 0;
-        for (auto [_, factor_error] : factors.template view<FactorError>().each()) {
-            total_error += factor_error.total();
-        }
-
-        for (auto [_, factor_error] : factors.template view<FactorError>().each()) {
-            max_factor_change = std::max(factor_error.change, max_factor_change);
+        for (auto [_, factor_summary] : factors.template view<FactorSummary>().each()) {
+            total_error += factor_summary.total();
         }
     }
 
